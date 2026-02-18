@@ -4,7 +4,7 @@
 #include "stdio.h"
 #include "malloc.h"
 #include "consoleapi2.h"
-#define Assert(x) if(!(x)) *(char*)0=0;
+#define Assert(x) if(!(x)) __debugbreak();
 
 #define MAX_CONST_CHAR_STRING_LEN 4096
 
@@ -132,9 +132,10 @@ static bool ConcatinateCString(struct CustomString *Dest, const char* Src){
 	return 1;
 }
 
-enum FORMAT_ERROR{
+enum FORMAT_RESULT{
 	FORMAT_PLACEHOLDER,
 	FORMAT_SUCCESS,
+	FORMAT_PING,
 	FORMAT_NON_MESSAGE,
 	FORMAT_OUT_OF_BOUNDS,
 	FORMAT_UNEXPECTED_CHAR,
@@ -151,6 +152,10 @@ enum FORMAT_ERROR{
 	FORMAT_ERROR_COUNT
 };
 
+
+
+
+
 #ifdef _DEBUG
 	#define DEBUG_FORMATTING_INPUT()\
 	*DebugCharIn = *CurrentChar;\
@@ -166,7 +171,7 @@ enum FORMAT_ERROR{
 #define DEBUG_FORMATTING_OUTPUT()
 #endif
 
-static FORMAT_ERROR FormatTwitchUserMessage(char *BufferIn, int BufferInSize, char *BufferOut, int BufferOutSize){
+static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, char *BufferOut, int BufferOutSize){
 	if(BufferIn == NULL){
 		return FORMAT_BUFFER_IN_NULL;
 	}
@@ -210,12 +215,24 @@ start:
 		if(CurrentChar >= BufferEnd){
 			return FORMAT_OUT_OF_BOUNDS;
 		}
+		Assert(memcpy(BufferOut, "PONG", 4));
+		int i = 0;
+		while ((i < BufferOutSize - 6) && (*CurrentChar!='\r')) {
+			BufferOut[i] = *CurrentChar;
+			DEBUG_FORMATTING_INPUT();
+			CurrentChar++;
+		}
+		Assert(*CurrentChar == '\r');
+		DEBUG_FORMATTING_INPUT();
+		CurrentChar++;
+		i++;
 		Assert(*CurrentChar == '\n');
 		DEBUG_FORMATTING_INPUT();
 		CurrentChar++;
-		if(*CurrentChar == '\0'){
-			return FORMAT_NON_MESSAGE;
-		}
+		i++;
+		Assert(*CurrentChar == '\0');
+		return FORMAT_PING;
+		
 	}
 
 	Assert(*CurrentChar == ':');
@@ -329,7 +346,7 @@ start:
 	const int FormatCharCount = NameEscapeCharCount + ClearEscapeCharCount + ChannelEscapeCharCount + 3 + SAFETY_PADDING;
 	int AvailableMessageSize = BufferOutSize - sizeof(UserArray) - sizeof(MessageType) - FormatCharCount - 1;
 
-	char *UserMessage = (char*) _malloca(AvailableMessageSize+1);
+	char *UserMessage = (char*) malloc(AvailableMessageSize+1);
 	Assert(UserMessage);
 	memset(UserMessage, 0, AvailableMessageSize);
 
@@ -394,7 +411,16 @@ start:
 	if(*CurrentChar == ':'){
 		goto start;
 	}
+	if (DebugBuffer) {
+		free(DebugBuffer);
+		DebugBuffer = NULL;
+	}
+	if (UserMessage) {
+		free(UserMessage);
+		UserMessage = NULL;
+	}
 	return FORMAT_SUCCESS;
+	
 }
 
 static int ReceiveMessage(SOCKET Socket ,char *Buffer, int BufferSize){
@@ -423,7 +449,11 @@ int TestFormattingMultipleMessages(){
 	return 1;
 }
 
-int main(){
+
+
+
+
+int main() {
 	SetConsoleOutputCP(65001);
 	SetConsoleCP(65001);
 	char ChannelNameInput[26] = {};
@@ -435,8 +465,8 @@ SelectChannel:
 	Assert(Result == NO_ERROR);
 
 	SOCKET Socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	Assert(Socket!= INVALID_SOCKET);
-	
+	Assert(Socket != INVALID_SOCKET);
+
 
 
 
@@ -445,17 +475,17 @@ SelectChannel:
 	Address.sin_port = htons(6667);
 	Address.sin_addr.s_addr = inet_addr("44.237.40.50");
 
-	if(connect(Socket, (sockaddr *)&Address, sizeof(Address)) == SOCKET_ERROR){
+	if (connect(Socket, (sockaddr*)&Address, sizeof(Address)) == SOCKET_ERROR) {
 		int Error = WSAGetLastError();
 		printf("Error: %d\n", Error);
 	}
-	
-	
+
+
 	CustomString LoginMessage = CreateString("PASS asdf\r\nNICK justinfan74123\r\n");
-	
+
 
 	Result = send(Socket, LoginMessage.Data, LoginMessage.Size, 0);
-	if(Result == SOCKET_ERROR){
+	if (Result == SOCKET_ERROR) {
 		int Error = WSAGetLastError();
 		printf("Error: %d\n", Error);
 	}
@@ -467,10 +497,10 @@ JoinPrompt:
 	printf("Which channel do you want to join?\n");
 	fgets(ChannelNameInput, 25, stdin);
 	size_t Len = strlen(ChannelNameInput);
-	Assert(ChannelNameInput[Len-1] == '\n');
-	ChannelNameInput[Len-1] = '\0';
+	Assert(ChannelNameInput[Len - 1] == '\n');
+	ChannelNameInput[Len - 1] = '\0';
 	CustomString ChannelToJoin = CreateString(ChannelNameInput);
-	if(!TestChannelName(ChannelToJoin)){
+	if (!TestChannelName(ChannelToJoin)) {
 		printf("Invalid Channel Name: Channel Names only consist of Letters, Numbers and Underscores.\n");
 		goto JoinPrompt;
 	}
@@ -480,13 +510,13 @@ JoinPrompt:
 	ConcatinateString(&JoinMessage, ChannelToJoin);
 	ConcatinateCString(&JoinMessage, "\r\n");
 	Result = send(Socket, JoinMessage.Data, JoinMessage.Size, 0);
-	if(Result == SOCKET_ERROR){
+	if (Result == SOCKET_ERROR) {
 		int Error = WSAGetLastError();
 		printf("Error: %d\n", Error);
 	}
-	fd_set SocketSet = {1,Socket};
-	timeval TimeoutValue = {5,0};
-	if(select(0, &SocketSet, NULL, NULL, &TimeoutValue) == 0){
+	fd_set SocketSet = { 1,Socket };
+	timeval TimeoutValue = { 5,0 };
+	if (select(0, &SocketSet, NULL, NULL, &TimeoutValue) == 0) {
 		printf("Joining the channel %s failed. Please make sure, that the channel exists and try again.\n", ChannelToJoin.Data);
 		goto SelectChannel;
 	}
@@ -495,28 +525,35 @@ JoinPrompt:
 	CustomString ChannelJoined = CreateString("You joined: ");
 	ConcatinateString(&ChannelJoined, ChannelToJoin);
 	printf("%s\n", ChannelJoined.Data);
-	
-	BytesRead = ReceiveMessage(Socket, Buffer, sizeof(Buffer));
-	
-	
 
-	while(1){
+	BytesRead = ReceiveMessage(Socket, Buffer, sizeof(Buffer));
+
+
+
+	while (1) {
 		BytesRead = ReceiveMessage(Socket, Buffer, sizeof(Buffer));
 		//LogBuffer(Buffer);
 		char FormattedOutput[4096] = {};
 #ifdef MEASURE
-		LARGE_INTEGER Start,End;
+		LARGE_INTEGER Start, End;
 		QueryPerformanceCounter(&Start);
 #endif
-		Assert(FormatTwitchUserMessage(Buffer, sizeof(Buffer), FormattedOutput, sizeof(FormattedOutput)));
+		if (BytesRead > 0) {
+			FORMAT_RESULT FormatResult = FormatTwitchUserMessage(Buffer, sizeof(Buffer), FormattedOutput, sizeof(FormattedOutput));
+
+			if (FormatResult == FORMAT_PING) {
+				const char* PongMessage = "PONG\r\n";
+				send(Socket, PongMessage, (int)strlen(PongMessage), 0);
+				printf("\033[38;2;255;255;0m%s", PongMessage);
+			}
+			else if (FormatResult == FORMAT_SUCCESS) {
 #ifdef MEASURE
-		QueryPerformanceCounter(&End);
-		long long time = End.QuadPart - Start.QuadPart;
-		printf("Time:%lldus\n",time);
+				QueryPerformanceCounter(&End);
+				long long time = End.QuadPart - Start.QuadPart;
+				printf("Time:%lldus\n", time);
 #endif
-		LogTwitchMessage(FormattedOutput);
+				LogTwitchMessage(FormattedOutput);
+			}
+		}
 	}
-
-
-
 }
