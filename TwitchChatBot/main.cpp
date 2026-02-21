@@ -1,4 +1,5 @@
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
 
 #include "ws2tcpip.h"
 #include "stdio.h"
@@ -7,7 +8,13 @@
 #define Assert(x) if(!(x)) __debugbreak();
 
 #define MAX_CONST_CHAR_STRING_LEN 4096
+#define MAX_CONCURRENT_CHANNELS 64
+#define MAX_LENGTH 500
+#define MAX_COMMAND_LENGTH 20
+#define MAX_USERNAME_LENGTH 25
 
+static char *CurrentChannels[MAX_CONCURRENT_CHANNELS] = {};
+static int CurrentChannelCount = 0;
 
 struct Arena{
 	size_t Size;
@@ -229,6 +236,8 @@ enum FORMAT_RESULT{
 	FORMAT_BUFFER_OUT_NULL,
 	FORMAT_MESSAGE_TRUNCATED,
 	FORMAT_OUTPUT_OUT_OF_MEMORY,
+	FORMAT_COMMAND,
+	FORMAT_JOIN_RESPONSE,
 
 	FORMAT_ERROR_COUNT
 };
@@ -265,6 +274,9 @@ struct Slice{
 	char *Ptr;
 	size_t Length;
 };
+
+
+
 
 static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, char *BufferOut, int BufferOutSize){
 	if(BufferIn == NULL){
@@ -314,8 +326,8 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 
 		return FORMAT_PING;
 	}
+
 	if(*CurrentChar == ':'){
-		//Twitch Message Layout: ":<name>!<name>@<name>.tmi.twitch.tv <Type> #<channel> :<message>\r\n"
 		while(*CurrentChar == ':'){
 			///////////////////
 			//Extract Message//
@@ -323,31 +335,29 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 			CurrentChar++;
 			Slice UserName;
 			UserName.Ptr = CurrentChar;
-			//"<name>"
-			while(*CurrentChar != '!' && CurrentChar < BufferInEnd){
+			while(*CurrentChar != '!' && *CurrentChar != '.' && CurrentChar < BufferInEnd){
 				CurrentChar++;
 			}
 			if(CurrentChar >= BufferInEnd){
 				return FORMAT_OUT_OF_BOUNDS;
 			}
-			Assert(*CurrentChar == '!');
+			if(*CurrentChar == '.'){
+				while(*CurrentChar != '\n' && CurrentChar < BufferInEnd){
+					CurrentChar++;
+				}
+				if(CurrentChar >= BufferInEnd){
+					return FORMAT_OUT_OF_BOUNDS;
+				}
+				Assert(*(CurrentChar-1) == '\r' && *CurrentChar == '\n');
+				CurrentChar++;
+				if(CurrentChar >= BufferInEnd){
+					return FORMAT_OUT_OF_BOUNDS;
+				}
+				return FORMAT_NON_MESSAGE;
+			}
 			UserName.Length = CurrentChar - UserName.Ptr;
 
-			//Skip over "!<name>@<name>.tmi.twitch.tv <Type> "
-			while(*CurrentChar != '#' && CurrentChar < BufferInEnd){
-				CurrentChar++;
-			}
-			if(CurrentChar >= BufferInEnd){
-				return FORMAT_OUT_OF_BOUNDS;
-			}
-			Assert(*CurrentChar == '#');
-			CurrentChar++;
-			if(CurrentChar >= BufferInEnd){
-				return FORMAT_OUT_OF_BOUNDS;
-			}
-			//<channel>
-			Slice ChannelName;
-			ChannelName.Ptr = CurrentChar;
+			
 			while(*CurrentChar != ' ' && CurrentChar < BufferInEnd){
 				CurrentChar++;
 			}
@@ -355,90 +365,160 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 				return FORMAT_OUT_OF_BOUNDS;
 			}
 			Assert(*CurrentChar == ' ');
-			ChannelName.Length = CurrentChar - ChannelName.Ptr;
+			CurrentChar++;
+			if(CurrentChar >= BufferInEnd){
+				return FORMAT_OUT_OF_BOUNDS;
+			}
 
-			CurrentChar++;
-			if(CurrentChar >= BufferInEnd){
-				return FORMAT_OUT_OF_BOUNDS;
-			}
-			Assert(*CurrentChar == ':');
-			CurrentChar++;
-			if(CurrentChar >= BufferInEnd){
-				return FORMAT_OUT_OF_BOUNDS;
-			}
-			Slice UserMessage;
-			UserMessage.Ptr = CurrentChar;
-			while(*CurrentChar != '\r' && CurrentChar < BufferInEnd){
+			Slice MessageType;
+			MessageType.Ptr = CurrentChar;
+			while(*CurrentChar != ' ' && CurrentChar < BufferInEnd){
 				CurrentChar++;
 			}
+
 			if(CurrentChar >= BufferInEnd){
 				return FORMAT_OUT_OF_BOUNDS;
 			}
-			Assert(*CurrentChar == '\r' && *(CurrentChar + 1) == '\n');
-			UserMessage.Length = CurrentChar - UserName.Ptr;
-			CurrentChar += 2;
+			MessageType.Length = CurrentChar - MessageType.Ptr;
+			CurrentChar++;
 			if(CurrentChar >= BufferInEnd){
 				return FORMAT_OUT_OF_BOUNDS;
 			}
-			//////////////////
-			//Copy To Output//
-			//////////////////
+			if(strncmp(MessageType.Ptr, "PRIVMSG",7) == 0){
+				Assert(*CurrentChar == '#');
+				CurrentChar++;
+				if(CurrentChar >= BufferInEnd){
+					return FORMAT_OUT_OF_BOUNDS;
+				}
+				Slice ChannelName;
+				ChannelName.Ptr = CurrentChar;
+				while(*CurrentChar != ':' && CurrentChar < BufferInEnd){
+					CurrentChar++;
+				}
+				if(CurrentChar >= BufferInEnd){
+					return FORMAT_OUT_OF_BOUNDS;
+				}
+				Assert(*CurrentChar == ':');
+				ChannelName.Length = CurrentChar - ChannelName.Ptr - 1;
+
+				CurrentChar++;
+				if(CurrentChar >= BufferInEnd){
+					return FORMAT_OUT_OF_BOUNDS;
+				}
+
+				Slice UserMessage;
+				UserMessage.Ptr = CurrentChar;
+				while(*CurrentChar != '\r' && CurrentChar < BufferInEnd){
+					CurrentChar++;
+				}
+				if(CurrentChar >= BufferInEnd){
+					return FORMAT_OUT_OF_BOUNDS;
+				}
+				Assert(*CurrentChar == '\r' && *(CurrentChar + 1) == '\n');
+				UserMessage.Length = CurrentChar - UserName.Ptr;
+				CurrentChar += 2;
+				if(CurrentChar >= BufferInEnd){
+					return FORMAT_OUT_OF_BOUNDS;
+				}
+				//////////////////
+				//Copy To Output//
+				//////////////////
 #define SAFETY_PADDING 4
-			const char ColorEscapeChannel[] = "\033[38;2;255;125;125m";
-			int ChannelEscapeCharCount = sizeof(ColorEscapeChannel) - 1;
-			const char ColorEscapeName[] = "\033[38;2;255;0;125m";
-			int NameEscapeCharCount = sizeof(ColorEscapeName) - 1;
-			const char ColorEscapeClear[] = "\033[0m";
-			int ClearEscapeCharCount = sizeof(ColorEscapeClear) - 1;
+				const char ColorEscapeChannel[] = "\033[38;2;255;125;125m";
+				int ChannelEscapeCharCount = sizeof(ColorEscapeChannel) - 1;
+				const char ColorEscapeName[] = "\033[38;2;255;0;125m";
+				int NameEscapeCharCount = sizeof(ColorEscapeName) - 1;
+				const char ColorEscapeClear[] = "\033[0m";
+				int ClearEscapeCharCount = sizeof(ColorEscapeClear) - 1;
 
 
-			size_t ExpectedSize = ChannelEscapeCharCount + ChannelName.Length + sizeof(':')
-				+ NameEscapeCharCount + UserName.Length
-				+ ClearEscapeCharCount + sizeof(':')
-				+ UserMessage.Length + sizeof('\n')
-				+ SAFETY_PADDING;
+				size_t ExpectedSize = ChannelEscapeCharCount + ChannelName.Length + sizeof(':')
+					+ NameEscapeCharCount + UserName.Length
+					+ ClearEscapeCharCount + sizeof(':')
+					+ UserMessage.Length + sizeof('\n')
+					+ SAFETY_PADDING;
 
 
-			long int BufferOutSizeFree = (long int)(BufferOutEnd - BufferOutRef);
+				long int BufferOutSizeFree = (long int)(BufferOutEnd - BufferOutRef);
 
-			if(BufferOutSizeFree < ExpectedSize){
-				return FORMAT_OUTPUT_OUT_OF_MEMORY;
+				if(BufferOutSizeFree < ExpectedSize){
+					return FORMAT_OUTPUT_OUT_OF_MEMORY;
+				}
+				memcpy(BufferOutRef, ColorEscapeChannel, ChannelEscapeCharCount);
+				BufferOutRef += ChannelEscapeCharCount;
+				Assert(BufferOutRef < BufferOutEnd);
+
+				memcpy(BufferOutRef, ChannelName.Ptr, ChannelName.Length);
+				BufferOutRef += ChannelName.Length;
+				Assert(BufferOutRef < BufferOutEnd);
+
+				*BufferOutRef = ':';
+				BufferOutRef++;
+				Assert(BufferOutRef < BufferOutEnd);
+
+				memcpy(BufferOutRef, ColorEscapeName, NameEscapeCharCount);
+				BufferOutRef += NameEscapeCharCount;
+				Assert(BufferOutRef < BufferOutEnd);
+
+				memcpy(BufferOutRef, UserName.Ptr, UserName.Length);
+				BufferOutRef += UserName.Length;
+				Assert(BufferOutRef < BufferOutEnd);
+
+				memcpy(BufferOutRef, ColorEscapeClear, ClearEscapeCharCount);
+				BufferOutRef += ClearEscapeCharCount;
+				Assert(BufferOutRef < BufferOutEnd);
+
+				*BufferOutRef = ':';
+				BufferOutRef++;
+				Assert(BufferOutRef < BufferOutEnd);
+
+				memcpy(BufferOutRef, UserMessage.Ptr, UserMessage.Length);
+				BufferOutRef += UserMessage.Length;
+				Assert(BufferOutRef < BufferOutEnd);
+
+				*BufferOutRef = '\n';
+				BufferOutRef++;
+				Assert(BufferOutRef < BufferOutEnd);
+
 			}
-			memcpy(BufferOutRef, ColorEscapeChannel, ChannelEscapeCharCount);
-			BufferOutRef += ChannelEscapeCharCount;
-			Assert(BufferOutRef < BufferOutEnd);
+			else if(strncmp(MessageType.Ptr, "JOIN",4) == 0){
+				Assert(*CurrentChar == '#');
+				CurrentChar++;
+				if(CurrentChar >= BufferInEnd){
+					return FORMAT_OUT_OF_BOUNDS;
+				}
+				Slice JoinedChannel;
+				JoinedChannel.Ptr = CurrentChar;
+				while(*CurrentChar != '\n' && CurrentChar < BufferInEnd){
+					CurrentChar++;
+				}
+				if(CurrentChar >= BufferInEnd){
+					return FORMAT_OUT_OF_BOUNDS;
+				}
+				Assert(*(CurrentChar - 1) == '\r' && *CurrentChar == '\n');
+				JoinedChannel.Length = CurrentChar - JoinedChannel.Ptr - 1;
+				CurrentChar++;
+				if(CurrentChar >= BufferInEnd){
+					return FORMAT_OUT_OF_BOUNDS;
+				}
+				
+				printf("\033[2KYou joined %.*s\n", (int)JoinedChannel.Length, JoinedChannel.Ptr);
+				int Index = 0;
+				while(CurrentChannels[Index] != NULL){
+					Index++;
+				}
+				Assert(Index < MAX_CONCURRENT_CHANNELS);
+				CurrentChannels[Index] = (char *)malloc(JoinedChannel.Length+1);
+				Assert(CurrentChannels[Index] != NULL);
+				memcpy(*(CurrentChannels + Index), JoinedChannel.Ptr, JoinedChannel.Length);
+				(*(CurrentChannels + Index))[JoinedChannel.Length] = '\0';
+				CurrentChannelCount++;
 
-			memcpy(BufferOutRef, ChannelName.Ptr, ChannelName.Length);
-			BufferOutRef += ChannelName.Length;
-			Assert(BufferOutRef < BufferOutEnd);
 
-			*BufferOutRef = ':';
-			BufferOutRef++;
-			Assert(BufferOutRef < BufferOutEnd);
-
-			memcpy(BufferOutRef, ColorEscapeName, NameEscapeCharCount);
-			BufferOutRef += NameEscapeCharCount;
-			Assert(BufferOutRef < BufferOutEnd);
-
-			memcpy(BufferOutRef, UserName.Ptr, UserName.Length);
-			BufferOutRef += UserName.Length;
-			Assert(BufferOutRef < BufferOutEnd);
-
-			memcpy(BufferOutRef, ColorEscapeClear, ClearEscapeCharCount);
-			BufferOutRef += ClearEscapeCharCount;
-			Assert(BufferOutRef < BufferOutEnd);
-
-			*BufferOutRef = ':';
-			BufferOutRef++;
-			Assert(BufferOutRef < BufferOutEnd);
-
-			memcpy(BufferOutRef, UserMessage.Ptr, UserMessage.Length);
-			BufferOutRef += UserMessage.Length;
-			Assert(BufferOutRef < BufferOutEnd);
-
-			*BufferOutRef = '\n';
-			BufferOutRef++;
-			Assert(BufferOutRef < BufferOutEnd);
+			}
+			else{
+				return FORMAT_NON_MESSAGE;
+			}
 		}
 		Assert(*CurrentChar == '\0');
 		return FORMAT_SUCCESS;
@@ -459,29 +539,139 @@ static int ReceiveMessage(SOCKET Socket ,char *Buffer, int BufferSize){
 
 static void LogTwitchMessage( char *Buffer){
 	printf("%s", Buffer);
+	
 }
 static void LogBuffer(char *Buffer){
 	printf("%s\n", Buffer);
 }
 
+static SOCKET Socket;
+
+
+static int IsInArray(char* *StringArray, int ArrayFillCount, char *ToFind,int ToFindSize){
+	if(ArrayFillCount <= 0){
+		return -1;
+	}
+	for(int i = 0; i < MAX_CONCURRENT_CHANNELS; i++){
+		char *CurrentString = *(StringArray + i);
+		if(strlen(CurrentString) == ToFindSize){
+			if(strncmp(CurrentString, ToFind, ToFindSize)==0){
+				return i;
+			}
+		}
+	}
+	return -1;
+}
+
+
+
+DWORD WINAPI ThreadProc(
+	void* lpParameter
+){
+	char InputArray[MAX_LENGTH+1];
+
+	
+	while(1){
+		memset(InputArray, 0, MAX_LENGTH+1);
+		fgets(InputArray, MAX_LENGTH + 1, stdin);
+
+		if(InputArray[0] == '/'){
+			if(strncmp(InputArray, "/join",5) == 0){
+				if(CurrentChannelCount > MAX_CONCURRENT_CHANNELS){
+					printf("You reached the limit of channels you are able to join.\n");
+					continue;
+				}
+				int ChannelLength = (int)strlen(InputArray + 6);
+				char ChannelName[MAX_USERNAME_LENGTH + 1] = {};
+				if(4 <= (ChannelLength-1) && ChannelLength-1 < MAX_USERNAME_LENGTH+1){
+					memcpy(ChannelName, (InputArray + 6), ChannelLength);
+					if(ChannelName[ChannelLength - 1] == '\n'){
+						ChannelName[ChannelLength - 1] = '\0';
+						for(int i = 0; i < ChannelLength - 1; i++){
+							ChannelName[i] = (char)tolower(ChannelName[i]);
+						}
+						char JoinMessage[10 + MAX_USERNAME_LENGTH] = {};
+						sprintf(JoinMessage, "JOIN #%s\r\n", ChannelName);
+						send(Socket, JoinMessage, (int)strlen(JoinMessage), 0);
+					} else{
+						printf("Channel Name max 25 characters.\n");
+					}
+				} else{
+					printf("Channel Name needs at least 4 and at most 25 characters.\n");
+				}
+			}
+			else if(strncmp(InputArray, "/leave", 6)==0){
+				
+
+				int ChannelLength = (int)strlen(InputArray + 7);
+				char ChannelName[MAX_USERNAME_LENGTH + 1] = {};
+				if(4 <= (ChannelLength-1) &&ChannelLength-1 < MAX_USERNAME_LENGTH+1){
+					memcpy(ChannelName, (InputArray + 7), ChannelLength);
+						if(ChannelName[ChannelLength - 1] == '\n'){
+							ChannelName[ChannelLength - 1] = '\0';
+							for(int i = 0; i < ChannelLength - 1; i++){
+								ChannelName[i] = (char)tolower(ChannelName[i]);
+							}
+							int Index = IsInArray(CurrentChannels, CurrentChannelCount, ChannelName, ChannelLength-1);
+							if(Index >= 0){
+								free(CurrentChannels[Index]);
+								CurrentChannels[Index] = NULL;
+								CurrentChannelCount--;
+
+								char PartMessage[10 + MAX_USERNAME_LENGTH] = {};
+								sprintf(PartMessage, "PART #%s\r\n", ChannelName);
+								send(Socket, PartMessage, (int)strlen(PartMessage), 0);
+								printf("You left %s\n", ChannelName);
+							} else{
+								printf("You aren't connected to %s.\n", ChannelName);
+							}
+
+						} else{
+							printf("Channel Name max 25 characters.\n");
+						}
+					
+					
+				} else{
+					printf("Channel Name max 25 characters.\n");
+				}
+			}
+			else if(strcmp(InputArray, "/list\n")==0){
+				if(CurrentChannelCount <= 0){
+					printf("You didnt join any chat yet.\n");
+					continue;
+				}
+				int i = 0;
+				char* *CurrentChannelsRef = CurrentChannels;
+				printf("\033[2KYou joined:\n");
+				while(i < CurrentChannelCount){
+					if((*CurrentChannelsRef)!= NULL){
+						i++;
+						printf("\033[2K%s\n", *CurrentChannelsRef);
+					}
+					CurrentChannelsRef++;
+				}
+			}
+
+		}
+
+	}
+		
+	lpParameter = 0;
+}
 
 
 int main() {
 	SetConsoleOutputCP(65001);
 	SetConsoleCP(65001);
-	char ChannelNameInput[26] = {};
 
 	Arena StringArena = CreateArena(4096);
 
-	
-
-SelectChannel:
 	//Init Winsock
 	WSADATA WSAData;
 	int Result = WSAStartup(MAKEWORD(2, 2), &WSAData);
 	Assert(Result == NO_ERROR);
-
-	SOCKET Socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	
+	Socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	Assert(Socket != INVALID_SOCKET);
 
 
@@ -492,68 +682,27 @@ SelectChannel:
 	Address.sin_port = htons(6667);
 	Address.sin_addr.s_addr = inet_addr("44.237.40.50");
 
-	if (connect(Socket, (sockaddr*)&Address, sizeof(Address)) == SOCKET_ERROR) {
+	if(connect(Socket, (sockaddr *)&Address, sizeof(Address)) == SOCKET_ERROR){
 		int Error = WSAGetLastError();
 		printf("Error: %d\n", Error);
 	}
 
 
-	CustomString LoginMessage = CreateString(&StringArena,"PASS asdf\r\nNICK justinfan74123\r\n");
-
+	CustomString LoginMessage = CreateString(&StringArena, "PASS asdf\r\nNICK justinfan15\r\n");
 
 	Result = send(Socket, LoginMessage.Data, LoginMessage.Size, 0);
-	if (Result == SOCKET_ERROR) {
+	if(Result == SOCKET_ERROR){
 		int Error = WSAGetLastError();
 		printf("Error: %d\n", Error);
 	}
+	DWORD ThreadID;
+	CreateThread(0, 0, ThreadProc, NULL, 0, &ThreadID);
+
 
 	char Buffer[4096];
-	int BytesRead = ReceiveMessage(Socket, Buffer, sizeof(Buffer));
-	//LogBuffer(Buffer);
-JoinPrompt:
-	printf("Which channel do you want to join?\n");
-	fgets(ChannelNameInput, 25, stdin);
-	size_t Len = strlen(ChannelNameInput);
-	Assert(ChannelNameInput[Len - 1] == '\n');
-	ChannelNameInput[Len - 1] = '\0';
-	CustomString ChannelToJoin = CreateString(&StringArena,ChannelNameInput);
-	if (!TestChannelName(ChannelToJoin)) {
-		printf("Invalid Channel Name: Channel Names only consist of Letters, Numbers and Underscores.\n");
-		goto JoinPrompt;
-	}
-	StringToLower(ChannelToJoin);
-
-	CustomString JoinMessage = CreateString(&StringArena,"JOIN #");
-	ConcatinateString(&StringArena,&JoinMessage, ChannelToJoin);
-	ConcatinateCString(&StringArena,&JoinMessage, "\r\n");
-	Result = send(Socket, JoinMessage.Data, JoinMessage.Size, 0);
-	if (Result == SOCKET_ERROR) {
-		int Error = WSAGetLastError();
-		printf("Error: %d\n", Error);
-	}
-	fd_set SocketSet = { 1,Socket };
-	timeval TimeoutValue = { 5,0 };
-	if (select(0, &SocketSet, NULL, NULL, &TimeoutValue) == 0) {
-		printf("Joining the channel %s failed. Please make sure, that the channel exists and try again.\n", ChannelToJoin.Data);
-		goto SelectChannel;
-	}
-	CustomString Test = CreateString(&StringArena, "");
-	ConcatinateCString(&StringArena, &Test, "Test");
-	ConcatinateString(&StringArena, &LoginMessage, Test);
-	
-
-	BytesRead = ReceiveMessage(Socket, Buffer, sizeof(Buffer));
-	CustomString ChannelJoined = CreateString(&StringArena,"You joined: ");
-	ConcatinateString(&StringArena,&ChannelJoined, ChannelToJoin);
-	printf("%s\n", ChannelJoined.Data);
-
-	BytesRead = ReceiveMessage(Socket, Buffer, sizeof(Buffer));
-
-
-
 
 	while (1) {
-		BytesRead = ReceiveMessage(Socket, Buffer, sizeof(Buffer));
+		int BytesRead = ReceiveMessage(Socket, Buffer, sizeof(Buffer));
 		//LogBuffer(Buffer);
 		char FormattedOutput[4096] = {};
 #ifdef MEASURE
