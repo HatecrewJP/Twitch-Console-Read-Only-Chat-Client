@@ -415,7 +415,7 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 					return FORMAT_OUT_OF_BOUNDS;
 				}
 				Assert(*CurrentChar == '\r' && *(CurrentChar + 1) == '\n');
-				UserMessage.Length = CurrentChar - UserName.Ptr;
+				UserMessage.Length = CurrentChar - UserMessage.Ptr;
 				CurrentChar += 2;
 				if(CurrentChar >= BufferInEnd){
 					return FORMAT_OUT_OF_BOUNDS;
@@ -600,9 +600,31 @@ DWORD WINAPI ThreadProc(
 					printf("Channel Name needs at least 4 and at most 25 characters.\n");
 				}
 			}
-			else if(strncmp(InputArray, "/leave", 6)==0){
-				
+			else if(strcmp(InputArray, "/leaveall\n") == 0){
+				if(CurrentChannelCount <= 0){
+					printf("You didn't join any chat yet.\n");
+					continue;
+				}
+				int i = 0;
+				char **CurrentChannelsRef = CurrentChannels;
+				while(i < CurrentChannelCount){
+					if((*CurrentChannelsRef) != NULL){
 
+						char PartMessage[10 + MAX_USERNAME_LENGTH] = {};
+						sprintf(PartMessage, "PART #%s\r\n", *CurrentChannelsRef);
+						send(Socket, PartMessage, (int)strlen(PartMessage), 0);
+
+						free(*CurrentChannelsRef);
+						*CurrentChannelsRef = NULL;
+						i++;
+					}
+					CurrentChannelsRef++;
+					Assert(CurrentChannelsRef <= CurrentChannels + MAX_CONCURRENT_CHANNELS);
+				}
+				CurrentChannelCount = 0;
+				printf("You left all channels.\n");
+			}
+			else if(strncmp(InputArray, "/leave", 6)==0){
 				int ChannelLength = (int)strlen(InputArray + 7);
 				char ChannelName[MAX_USERNAME_LENGTH + 1] = {};
 				if(4 <= (ChannelLength-1) &&ChannelLength-1 < MAX_USERNAME_LENGTH+1){
@@ -637,7 +659,7 @@ DWORD WINAPI ThreadProc(
 			}
 			else if(strcmp(InputArray, "/list\n")==0){
 				if(CurrentChannelCount <= 0){
-					printf("You didnt join any chat yet.\n");
+					printf("You didn't join any chat yet.\n");
 					continue;
 				}
 				int i = 0;
@@ -651,6 +673,25 @@ DWORD WINAPI ThreadProc(
 					CurrentChannelsRef++;
 				}
 			}
+			else if(strcmp(InputArray, "/clear\n")==0){
+				printf("\033[2J\033[H");
+			}
+			else if(strcmp(InputArray, "/help\n") == 0 || strcmp(InputArray, "/h\n")==0){
+				const char *Help = "/help or /h: List of all available commands\n";
+				const char *Join = "/join <channel>: Joins the chat of <channel>\n";
+				const char *Leave = "/leave <channel>: Leaves the chat of <channel>\n";
+				const char *LeaveAll = "/leaveall: Leaves all currently joined channels\n";
+				const char *List = "/list: Lists all currently connected channels\n";
+				const char *Clear = "/clear: Clears the screen.\n";
+				printf("Available commands: \n%s%s%s%s%s%s\n",Help,Join,Leave,LeaveAll,List,Clear);
+			}
+
+
+
+			else{
+				printf("Unknown command. Use /help or /h for a list of available commands.\n");
+			}
+			
 
 		}
 
