@@ -1,5 +1,4 @@
 # TODO
-
-- Leave Channel
-- Join second channel
-- Random User Color
+- "Random" User Color
+- different Channel Color
+- detect buffer overflow and recover

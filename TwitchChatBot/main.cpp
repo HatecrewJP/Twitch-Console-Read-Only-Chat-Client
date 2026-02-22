@@ -7,12 +7,13 @@
 #include "consoleapi2.h"
 #define Assert(x) if(!(x)) __debugbreak();
 
+	
+
 #define MAX_CONST_CHAR_STRING_LEN 4096
 #define MAX_CONCURRENT_CHANNELS 64
 #define MAX_LENGTH 500
 #define MAX_COMMAND_LENGTH 20
 #define MAX_USERNAME_LENGTH 25
-
 static char *CurrentChannels[MAX_CONCURRENT_CHANNELS] = {};
 static int CurrentChannelCount = 0;
 
@@ -238,6 +239,8 @@ enum FORMAT_RESULT{
 	FORMAT_OUTPUT_OUT_OF_MEMORY,
 	FORMAT_COMMAND,
 	FORMAT_JOIN_RESPONSE,
+	FORMAT_BUFFER_IN_TOO_SMALL,
+	FORMAT_BUFFER_OUT_TOO_SMALL,
 
 	FORMAT_ERROR_COUNT
 };
@@ -297,13 +300,20 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 	if(BufferOutSize < 0){
 		return FORMAT_BUFFER_OUT_SIZE_NEGATIVE;
 	}
+	if(BufferInSize > BufferOutSize){
+		return FORMAT_BUFFER_IN_TOO_SMALL;
+	}
+
 	char *BufferInEnd = BufferIn + BufferInSize;
 	char *CurrentChar = BufferIn;
 	char *BufferOutRef = BufferOut;
 	char *BufferOutEnd = BufferOut + BufferOutSize;
 
-	bool IsPing = strncmp(CurrentChar, "PING", 4);
-	if(IsPing == 0){
+	if(BufferInSize < 4){
+		return FORMAT_BUFFER_IN_TOO_SMALL;
+	}
+	bool IsPing = !strncmp(CurrentChar, "PING", 4);
+	if(IsPing){
 		//Output: "PONG <text in>\r\n"
 		Assert(memcpy(BufferOut, "PONG", 4));
 		CurrentChar += 4;
@@ -311,19 +321,20 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 		int i = 4;
 		//copy <text in>
 		//6 = 4(PONG) + 2(\r\n)
-		while((i < BufferOutSize - 6) && (*CurrentChar != '\r')){
+		while((i < BufferOutSize - 6) && (*CurrentChar != '\r') && CurrentChar < BufferInEnd){
 			BufferOut[i] = *CurrentChar;
 			CurrentChar++;
 			i++;
 		}
-		if((*CurrentChar != '\r') && (i > (BufferOutSize - 6))){
+		if(CurrentChar >= BufferInEnd){
 			return FORMAT_OUT_OF_BOUNDS;
+		}
+		if((*CurrentChar != '\r') && (i > (BufferOutSize - 6))){
+			return FORMAT_OUTPUT_OUT_OF_MEMORY;
 		}
 		Assert(strncmp(CurrentChar, "\r\n", 2) == 0);
 		memcpy(&BufferOut[i], "\r\n", 2);
 		CurrentChar += 2;
-		Assert(*CurrentChar == '\0');
-
 		return FORMAT_PING;
 	}
 
@@ -569,7 +580,7 @@ DWORD WINAPI ThreadProc(
 	void* lpParameter
 ){
 	char InputArray[MAX_LENGTH+1];
-
+	printf("You are ready to join a chat. If you need help use /help.\n");
 	
 	while(1){
 		memset(InputArray, 0, MAX_LENGTH+1);
@@ -683,7 +694,7 @@ DWORD WINAPI ThreadProc(
 				const char *LeaveAll = "/leaveall: Leaves all currently joined channels\n";
 				const char *List = "/list: Lists all currently connected channels\n";
 				const char *Clear = "/clear: Clears the screen.\n";
-				printf("Available commands: \n%s%s%s%s%s%s\n",Help,Join,Leave,LeaveAll,List,Clear);
+				printf("Available commands: \n%s%s%s%s%s%s=====================================================\n",Help,Join,Leave,LeaveAll,List,Clear);
 			}
 
 
@@ -769,6 +780,65 @@ int main() {
 			else if (FormatResult == FORMAT_SUCCESS) {
 
 				LogTwitchMessage(FormattedOutput);
+			}
+			else{
+				switch(FormatResult){
+				case FORMAT_NON_MESSAGE:
+					OutputDebugStringA("FORMAT_NON_MESSAGE\n");
+					break;
+				case FORMAT_OUT_OF_BOUNDS:
+					OutputDebugStringA("FORMAT_OUT_OF_BOUNDS\n");
+					break;
+				case FORMAT_UNEXPECTED_CHAR:
+					OutputDebugStringA("FORMAT_UNEXPECTED_CHAR\n");
+					break;
+				case FORMAT_TOO_LONG_MESSAGE_TYPE:
+					OutputDebugStringA("FORMAT_TOO_LONG_MESSAGE_TYPE\n");
+					break;
+				case FORMAT_BUFFER_IN_SIZE_ZERO:
+					OutputDebugStringA("FORMAT_BUFFER_IN_SIZE_ZERO\n");
+					break;
+				case FORMAT_BUFFER_OUT_SIZE_ZERO:
+					OutputDebugStringA("FORMAT_BUFFER_OUT_SIZE_ZERO\n");
+					break;
+				case FORMAT_BUFFER_IN_SIZE_NEGATIVE:
+					OutputDebugStringA("FORMAT_BUFFER_IN_SIZE_NEGATIVE\n");
+					break;
+				case FORMAT_BUFFER_OUT_SIZE_NEGATIVE:
+					OutputDebugStringA("FORMAT_BUFFER_OUT_SIZE_NEGATIVE\n");
+					break;
+				case FORMAT_BUFFER_IN_NULL:
+					OutputDebugStringA("FORMAT_BUFFER_IN_NULL\n");
+					break;
+				case FORMAT_BUFFER_OUT_NULL:
+					OutputDebugStringA("FORMAT_BUFFER_OUT_NULL\n");
+					break;
+				case FORMAT_MESSAGE_TRUNCATED:
+					OutputDebugStringA("FORMAT_MESSAGE_TRUNCATED\n");
+					break;
+				case FORMAT_OUTPUT_OUT_OF_MEMORY:
+					OutputDebugStringA("FORMAT_OUTPUT_OUT_OF_MEMORY\n");
+					break;
+				case FORMAT_COMMAND:
+					OutputDebugStringA("FORMAT_COMMAND\n");
+					break;
+				case FORMAT_JOIN_RESPONSE:
+					OutputDebugStringA("FORMAT_JOIN_RESPONSE\n");
+					break;
+				case FORMAT_BUFFER_IN_TOO_SMALL:
+					OutputDebugStringA("FORMAT_BUFFER_IN_TOO_SMALL\n");
+					break;
+				case FORMAT_BUFFER_OUT_TOO_SMALL:
+					OutputDebugStringA("FORMAT_BUFFER_OUT_TOO_SMALL\n");
+					break;
+				case FORMAT_ERROR_COUNT:
+					OutputDebugStringA("FORMAT_ERROR_COUNT\n");
+					break;
+				default:
+					break;
+				}
+				//__debugbreak();
+				
 			}
 		}
 	}
