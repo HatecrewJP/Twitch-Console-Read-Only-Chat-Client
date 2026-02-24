@@ -241,6 +241,7 @@ enum FORMAT_RESULT{
 	FORMAT_JOIN_RESPONSE,
 	FORMAT_BUFFER_IN_TOO_SMALL,
 	FORMAT_BUFFER_OUT_TOO_SMALL,
+	FORMAT_NO_MESSAGE,
 
 	FORMAT_ERROR_COUNT
 };
@@ -309,232 +310,254 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 	char *BufferOutRef = BufferOut;
 	char *BufferOutEnd = BufferOut + BufferOutSize;
 
-	if(BufferInSize < 4){
+	if (BufferInSize < 4) {
 		return FORMAT_BUFFER_IN_TOO_SMALL;
 	}
-	bool IsPing = !strncmp(CurrentChar, "PING", 4);
-	if(IsPing){
-		//Output: "PONG <text in>\r\n"
-		Assert(memcpy(BufferOut, "PONG", 4));
-		CurrentChar += 4;
-		//start writing after "PONG"
-		int i = 4;
-		//copy <text in>
-		//6 = 4(PONG) + 2(\r\n)
-		while((i < BufferOutSize - 6) && (*CurrentChar != '\r') && CurrentChar < BufferInEnd){
-			BufferOut[i] = *CurrentChar;
-			CurrentChar++;
-			i++;
-		}
-		if(CurrentChar >= BufferInEnd){
-			return FORMAT_OUT_OF_BOUNDS;
-		}
-		if((*CurrentChar != '\r') && (i > (BufferOutSize - 6))){
-			return FORMAT_OUTPUT_OUT_OF_MEMORY;
-		}
-		Assert(strncmp(CurrentChar, "\r\n", 2) == 0);
-		memcpy(&BufferOut[i], "\r\n", 2);
-		CurrentChar += 2;
-		return FORMAT_PING;
-	}
-
-	if(*CurrentChar == ':'){
-		while(*CurrentChar == ':'){
-			///////////////////
-			//Extract Message//
-			///////////////////
-			CurrentChar++;
-			Slice UserName;
-			UserName.Ptr = CurrentChar;
-			while(*CurrentChar != '!' && *CurrentChar != '.' && CurrentChar < BufferInEnd){
+	while (*CurrentChar != '\0') {
+		bool IsPing = !strncmp(CurrentChar, "PING", 4);
+		if (IsPing) {
+			//Output: "PONG <text in>\r\n"
+			Assert(memcpy(BufferOut, "PONG", 4));
+			CurrentChar += 4;
+			//start writing after "PONG"
+			int i = 4;
+			//copy <text in>
+			//6 = 4(PONG) + 2(\r\n)
+			while ((i < BufferOutSize - 6) && (*CurrentChar != '\r') && CurrentChar < BufferInEnd) {
+				BufferOut[i] = *CurrentChar;
 				CurrentChar++;
+				i++;
 			}
-			if(CurrentChar >= BufferInEnd){
+			if (CurrentChar >= BufferInEnd) {
 				return FORMAT_OUT_OF_BOUNDS;
 			}
-			if(*CurrentChar == '.'){
-				while(*CurrentChar != '\n' && CurrentChar < BufferInEnd){
+			if ((*CurrentChar != '\r') && (i > (BufferOutSize - 6))) {
+				return FORMAT_OUTPUT_OUT_OF_MEMORY;
+			}
+			Assert(strncmp(CurrentChar, "\r\n", 2) == 0);
+			memcpy(&BufferOut[i], "\r\n", 2);
+			CurrentChar += 2;
+			return FORMAT_PING;
+		}
+		//recover buffer overflow
+		if (*CurrentChar != ':') {
+			while (*CurrentChar != '\n' && CurrentChar < BufferInEnd) {
+				CurrentChar++;
+			}
+			if (CurrentChar >= BufferInEnd) {
+				return FORMAT_NO_MESSAGE;
+			}
+			Assert(*(CurrentChar - 1) == '\r' && *CurrentChar == '\n');
+			CurrentChar++;
+			if (CurrentChar >= BufferInEnd) {
+				return FORMAT_OUT_OF_BOUNDS;
+			}
+			static unsigned DroppedMessageCount = 0;
+			DroppedMessageCount++;
+			printf("\033[38;2;255;0;0mTotal Dropped Messages: %d\n\033[0m", DroppedMessageCount);
+		}
+		if (*CurrentChar == ':') {
+			while (*CurrentChar == ':') {
+				///////////////////
+				//Extract Message//
+				///////////////////
+				CurrentChar++;
+				Slice UserName;
+				UserName.Ptr = CurrentChar;
+				while (*CurrentChar != '!' && *CurrentChar != '.' && CurrentChar < BufferInEnd) {
 					CurrentChar++;
 				}
-				if(CurrentChar >= BufferInEnd){
+				if (CurrentChar >= BufferInEnd) {
 					return FORMAT_OUT_OF_BOUNDS;
 				}
-				Assert(*(CurrentChar-1) == '\r' && *CurrentChar == '\n');
-				CurrentChar++;
-				if(CurrentChar >= BufferInEnd){
-					return FORMAT_OUT_OF_BOUNDS;
+				if (*CurrentChar == '.') {
+					while (*CurrentChar != '\n' && CurrentChar < BufferInEnd) {
+						CurrentChar++;
+					}
+					if (CurrentChar >= BufferInEnd) {
+						return FORMAT_OUT_OF_BOUNDS;
+					}
+					Assert(*(CurrentChar - 1) == '\r' && *CurrentChar == '\n');
+					CurrentChar++;
+					if (CurrentChar >= BufferInEnd) {
+						return FORMAT_OUT_OF_BOUNDS;
+					}
+					return FORMAT_NON_MESSAGE;
 				}
-				return FORMAT_NON_MESSAGE;
-			}
-			UserName.Length = CurrentChar - UserName.Ptr;
+				UserName.Length = CurrentChar - UserName.Ptr;
 
-			
-			while(*CurrentChar != ' ' && CurrentChar < BufferInEnd){
-				CurrentChar++;
-			}
-			if(CurrentChar >= BufferInEnd){
-				return FORMAT_OUT_OF_BOUNDS;
-			}
-			Assert(*CurrentChar == ' ');
-			CurrentChar++;
-			if(CurrentChar >= BufferInEnd){
-				return FORMAT_OUT_OF_BOUNDS;
-			}
 
-			Slice MessageType;
-			MessageType.Ptr = CurrentChar;
-			while(*CurrentChar != ' ' && CurrentChar < BufferInEnd){
-				CurrentChar++;
-			}
-
-			if(CurrentChar >= BufferInEnd){
-				return FORMAT_OUT_OF_BOUNDS;
-			}
-			MessageType.Length = CurrentChar - MessageType.Ptr;
-			CurrentChar++;
-			if(CurrentChar >= BufferInEnd){
-				return FORMAT_OUT_OF_BOUNDS;
-			}
-			if(strncmp(MessageType.Ptr, "PRIVMSG",7) == 0){
-				Assert(*CurrentChar == '#');
-				CurrentChar++;
-				if(CurrentChar >= BufferInEnd){
-					return FORMAT_OUT_OF_BOUNDS;
-				}
-				Slice ChannelName;
-				ChannelName.Ptr = CurrentChar;
-				while(*CurrentChar != ':' && CurrentChar < BufferInEnd){
+				while (*CurrentChar != ' ' && CurrentChar < BufferInEnd) {
 					CurrentChar++;
 				}
-				if(CurrentChar >= BufferInEnd){
+				if (CurrentChar >= BufferInEnd) {
 					return FORMAT_OUT_OF_BOUNDS;
 				}
-				Assert(*CurrentChar == ':');
-				ChannelName.Length = CurrentChar - ChannelName.Ptr - 1;
-
+				Assert(*CurrentChar == ' ');
 				CurrentChar++;
-				if(CurrentChar >= BufferInEnd){
+				if (CurrentChar >= BufferInEnd) {
 					return FORMAT_OUT_OF_BOUNDS;
 				}
 
-				Slice UserMessage;
-				UserMessage.Ptr = CurrentChar;
-				while(*CurrentChar != '\r' && CurrentChar < BufferInEnd){
+				Slice MessageType;
+				MessageType.Ptr = CurrentChar;
+				while (*CurrentChar != ' ' && CurrentChar < BufferInEnd) {
 					CurrentChar++;
 				}
-				if(CurrentChar >= BufferInEnd){
+
+				if (CurrentChar >= BufferInEnd) {
 					return FORMAT_OUT_OF_BOUNDS;
 				}
-				Assert(*CurrentChar == '\r' && *(CurrentChar + 1) == '\n');
-				UserMessage.Length = CurrentChar - UserMessage.Ptr;
-				CurrentChar += 2;
-				if(CurrentChar >= BufferInEnd){
+				MessageType.Length = CurrentChar - MessageType.Ptr;
+				CurrentChar++;
+				if (CurrentChar >= BufferInEnd) {
 					return FORMAT_OUT_OF_BOUNDS;
 				}
-				//////////////////
-				//Copy To Output//
-				//////////////////
+				if (strncmp(MessageType.Ptr, "PRIVMSG", 7) == 0) {
+					Assert(*CurrentChar == '#');
+					CurrentChar++;
+					if (CurrentChar >= BufferInEnd) {
+						return FORMAT_OUT_OF_BOUNDS;
+					}
+					Slice ChannelName;
+					ChannelName.Ptr = CurrentChar;
+					while (*CurrentChar != ':' && CurrentChar < BufferInEnd) {
+						CurrentChar++;
+					}
+					if (CurrentChar >= BufferInEnd) {
+						return FORMAT_OUT_OF_BOUNDS;
+					}
+					Assert(*CurrentChar == ':');
+					ChannelName.Length = CurrentChar - ChannelName.Ptr - 1;
+
+					CurrentChar++;
+					if (CurrentChar >= BufferInEnd) {
+						return FORMAT_OUT_OF_BOUNDS;
+					}
+
+					Slice UserMessage;
+					UserMessage.Ptr = CurrentChar;
+					while (*CurrentChar != '\r' && CurrentChar < BufferInEnd) {
+						CurrentChar++;
+					}
+					if (CurrentChar >= BufferInEnd) {
+						return FORMAT_OUT_OF_BOUNDS;
+					}
+					Assert(*CurrentChar == '\r' && *(CurrentChar + 1) == '\n');
+					UserMessage.Length = CurrentChar - UserMessage.Ptr;
+					CurrentChar += 2;
+					if (CurrentChar >= BufferInEnd) {
+						return FORMAT_OUT_OF_BOUNDS;
+					}
+					//////////////////
+					//Copy To Output//
+					//////////////////
 #define SAFETY_PADDING 4
-				const char ColorEscapeChannel[] = "\033[38;2;255;125;125m";
-				int ChannelEscapeCharCount = sizeof(ColorEscapeChannel) - 1;
-				const char ColorEscapeName[] = "\033[38;2;255;0;125m";
-				int NameEscapeCharCount = sizeof(ColorEscapeName) - 1;
-				const char ColorEscapeClear[] = "\033[0m";
-				int ClearEscapeCharCount = sizeof(ColorEscapeClear) - 1;
+						const char ColorEscapeChannel[] = "\033[38;2;255;125;125m";
+					int ChannelEscapeCharCount = sizeof(ColorEscapeChannel) - 1;
+					const char ColorEscapeName[] = "\033[38;2;255;0;125m";
+					int NameEscapeCharCount = sizeof(ColorEscapeName) - 1;
+					const char ColorEscapeClear[] = "\033[0m";
+					int ClearEscapeCharCount = sizeof(ColorEscapeClear) - 1;
 
 
-				size_t ExpectedSize = ChannelEscapeCharCount + ChannelName.Length + sizeof(':')
-					+ NameEscapeCharCount + UserName.Length
-					+ ClearEscapeCharCount + sizeof(':')
-					+ UserMessage.Length + sizeof('\n')
-					+ SAFETY_PADDING;
+					size_t ExpectedSize = ChannelEscapeCharCount + ChannelName.Length + sizeof(':')
+						+ NameEscapeCharCount + UserName.Length
+						+ ClearEscapeCharCount + sizeof(':')
+						+ UserMessage.Length + sizeof('\n')
+						+ SAFETY_PADDING;
 
 
-				long int BufferOutSizeFree = (long int)(BufferOutEnd - BufferOutRef);
+					long int BufferOutSizeFree = (long int)(BufferOutEnd - BufferOutRef);
 
-				if(BufferOutSizeFree < ExpectedSize){
-					return FORMAT_OUTPUT_OUT_OF_MEMORY;
+					if (BufferOutSizeFree < ExpectedSize) {
+						return FORMAT_OUTPUT_OUT_OF_MEMORY;
+					}
+					memcpy(BufferOutRef, ColorEscapeChannel, ChannelEscapeCharCount);
+					BufferOutRef += ChannelEscapeCharCount;
+					Assert(BufferOutRef < BufferOutEnd);
+
+					memcpy(BufferOutRef, ChannelName.Ptr, ChannelName.Length);
+					BufferOutRef += ChannelName.Length;
+					Assert(BufferOutRef < BufferOutEnd);
+
+					*BufferOutRef = ':';
+					BufferOutRef++;
+					Assert(BufferOutRef < BufferOutEnd);
+
+					memcpy(BufferOutRef, ColorEscapeName, NameEscapeCharCount);
+					BufferOutRef += NameEscapeCharCount;
+					Assert(BufferOutRef < BufferOutEnd);
+
+					memcpy(BufferOutRef, UserName.Ptr, UserName.Length);
+					BufferOutRef += UserName.Length;
+					Assert(BufferOutRef < BufferOutEnd);
+
+					memcpy(BufferOutRef, ColorEscapeClear, ClearEscapeCharCount);
+					BufferOutRef += ClearEscapeCharCount;
+					Assert(BufferOutRef < BufferOutEnd);
+
+					*BufferOutRef = ':';
+					BufferOutRef++;
+					Assert(BufferOutRef < BufferOutEnd);
+
+					memcpy(BufferOutRef, UserMessage.Ptr, UserMessage.Length);
+					BufferOutRef += UserMessage.Length;
+					Assert(BufferOutRef < BufferOutEnd);
+
+					*BufferOutRef = '\n';
+					BufferOutRef++;
+					Assert(BufferOutRef < BufferOutEnd);
+
 				}
-				memcpy(BufferOutRef, ColorEscapeChannel, ChannelEscapeCharCount);
-				BufferOutRef += ChannelEscapeCharCount;
-				Assert(BufferOutRef < BufferOutEnd);
-
-				memcpy(BufferOutRef, ChannelName.Ptr, ChannelName.Length);
-				BufferOutRef += ChannelName.Length;
-				Assert(BufferOutRef < BufferOutEnd);
-
-				*BufferOutRef = ':';
-				BufferOutRef++;
-				Assert(BufferOutRef < BufferOutEnd);
-
-				memcpy(BufferOutRef, ColorEscapeName, NameEscapeCharCount);
-				BufferOutRef += NameEscapeCharCount;
-				Assert(BufferOutRef < BufferOutEnd);
-
-				memcpy(BufferOutRef, UserName.Ptr, UserName.Length);
-				BufferOutRef += UserName.Length;
-				Assert(BufferOutRef < BufferOutEnd);
-
-				memcpy(BufferOutRef, ColorEscapeClear, ClearEscapeCharCount);
-				BufferOutRef += ClearEscapeCharCount;
-				Assert(BufferOutRef < BufferOutEnd);
-
-				*BufferOutRef = ':';
-				BufferOutRef++;
-				Assert(BufferOutRef < BufferOutEnd);
-
-				memcpy(BufferOutRef, UserMessage.Ptr, UserMessage.Length);
-				BufferOutRef += UserMessage.Length;
-				Assert(BufferOutRef < BufferOutEnd);
-
-				*BufferOutRef = '\n';
-				BufferOutRef++;
-				Assert(BufferOutRef < BufferOutEnd);
-
-			}
-			else if(strncmp(MessageType.Ptr, "JOIN",4) == 0){
-				Assert(*CurrentChar == '#');
-				CurrentChar++;
-				if(CurrentChar >= BufferInEnd){
-					return FORMAT_OUT_OF_BOUNDS;
-				}
-				Slice JoinedChannel;
-				JoinedChannel.Ptr = CurrentChar;
-				while(*CurrentChar != '\n' && CurrentChar < BufferInEnd){
+				else if (strncmp(MessageType.Ptr, "JOIN", 4) == 0) {
+					Assert(*CurrentChar == '#');
 					CurrentChar++;
-				}
-				if(CurrentChar >= BufferInEnd){
-					return FORMAT_OUT_OF_BOUNDS;
-				}
-				Assert(*(CurrentChar - 1) == '\r' && *CurrentChar == '\n');
-				JoinedChannel.Length = CurrentChar - JoinedChannel.Ptr - 1;
-				CurrentChar++;
-				if(CurrentChar >= BufferInEnd){
-					return FORMAT_OUT_OF_BOUNDS;
-				}
-				
-				printf("\033[2KYou joined %.*s\n", (int)JoinedChannel.Length, JoinedChannel.Ptr);
-				int Index = 0;
-				while(CurrentChannels[Index] != NULL){
-					Index++;
-				}
-				Assert(Index < MAX_CONCURRENT_CHANNELS);
-				CurrentChannels[Index] = (char *)malloc(JoinedChannel.Length+1);
-				Assert(CurrentChannels[Index] != NULL);
-				memcpy(*(CurrentChannels + Index), JoinedChannel.Ptr, JoinedChannel.Length);
-				(*(CurrentChannels + Index))[JoinedChannel.Length] = '\0';
-				CurrentChannelCount++;
+					if (CurrentChar >= BufferInEnd) {
+						return FORMAT_OUT_OF_BOUNDS;
+					}
+					Slice JoinedChannel;
+					JoinedChannel.Ptr = CurrentChar;
+					while (*CurrentChar != '\n' && CurrentChar < BufferInEnd) {
+						CurrentChar++;
+					}
+					if (CurrentChar >= BufferInEnd) {
+						return FORMAT_OUT_OF_BOUNDS;
+					}
+					Assert(*(CurrentChar - 1) == '\r' && *CurrentChar == '\n');
+					JoinedChannel.Length = CurrentChar - JoinedChannel.Ptr - 1;
+					CurrentChar++;
+					if (CurrentChar >= BufferInEnd) {
+						return FORMAT_OUT_OF_BOUNDS;
+					}
+
+					printf("\033[2KYou joined %.*s\n", (int)JoinedChannel.Length, JoinedChannel.Ptr);
+					int Index = 0;
+					while (CurrentChannels[Index] != NULL) {
+						Index++;
+					}
+					Assert(Index < MAX_CONCURRENT_CHANNELS);
+					CurrentChannels[Index] = (char*)malloc(JoinedChannel.Length + 1);
+					Assert(CurrentChannels[Index] != NULL);
+					memcpy(*(CurrentChannels + Index), JoinedChannel.Ptr, JoinedChannel.Length);
+					(*(CurrentChannels + Index))[JoinedChannel.Length] = '\0';
+					CurrentChannelCount++;
 
 
+				}
+				else {
+					return FORMAT_NON_MESSAGE;
+				}
 			}
-			else{
-				return FORMAT_NON_MESSAGE;
-			}
+		
 		}
-		Assert(*CurrentChar == '\0');
-		return FORMAT_SUCCESS;
+		else {
+			return FORMAT_NON_MESSAGE;
+		}
+
 	}
-	return FORMAT_NON_MESSAGE;
+	Assert(*CurrentChar == '\0');
+	return FORMAT_SUCCESS;
 
 }
 
@@ -831,13 +854,12 @@ int main() {
 				case FORMAT_BUFFER_OUT_TOO_SMALL:
 					OutputDebugStringA("FORMAT_BUFFER_OUT_TOO_SMALL\n");
 					break;
-				case FORMAT_ERROR_COUNT:
-					OutputDebugStringA("FORMAT_ERROR_COUNT\n");
+				case FORMAT_NO_MESSAGE:
+					OutputDebugStringA("FORMAT_NO_MESSAGE\n");
 					break;
 				default:
 					break;
 				}
-				//__debugbreak();
 				
 			}
 		}
