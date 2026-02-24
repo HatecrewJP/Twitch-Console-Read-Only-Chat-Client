@@ -610,7 +610,7 @@ DWORD WINAPI ThreadProc(
 		fgets(InputArray, MAX_LENGTH + 1, stdin);
 
 		if(InputArray[0] == '/'){
-			if(strncmp(InputArray, "/join",5) == 0){
+			if(strncmp(InputArray, "/join ",6) == 0){
 				if(CurrentChannelCount > MAX_CONCURRENT_CHANNELS){
 					printf("You reached the limit of channels you are able to join.\n");
 					continue;
@@ -658,7 +658,7 @@ DWORD WINAPI ThreadProc(
 				CurrentChannelCount = 0;
 				printf("You left all channels.\n");
 			}
-			else if(strncmp(InputArray, "/leave", 6)==0){
+			else if(strncmp(InputArray, "/leave ", 7)==0){
 				int ChannelLength = (int)strlen(InputArray + 7);
 				char ChannelName[MAX_USERNAME_LENGTH + 1] = {};
 				if(4 <= (ChannelLength-1) &&ChannelLength-1 < MAX_USERNAME_LENGTH+1){
