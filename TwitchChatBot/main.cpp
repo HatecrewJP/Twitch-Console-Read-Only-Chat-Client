@@ -442,6 +442,67 @@ static int IsSliceRGBValue(Slice Slice){
 
 }
 
+static int SetColorStructFromString(RGB *ColorStruct, char *Array){
+	char *InputArrayRef = Array;
+	
+	Slice StringRed;
+	StringRed.Ptr = InputArrayRef;
+
+	int i = 0;
+	while(*InputArrayRef != ';' && i < 4){
+		InputArrayRef++;
+		i++;
+	}
+	if(i >= 4 && *InputArrayRef != ';'){
+		return -2;
+	}
+	Assert(*InputArrayRef == ';');
+	InputArrayRef++;
+	StringRed.Length = i;
+
+	Slice StringGreen;
+	StringGreen.Ptr = InputArrayRef;
+	i = 0;
+	while(*InputArrayRef != ';' && i < 4){
+		InputArrayRef++;
+		i++;
+	}
+	if(i >= 4 && *InputArrayRef != ';'){
+		return -2;
+	}
+	Assert(*InputArrayRef == ';');
+	StringGreen.Length = i;
+	InputArrayRef++;
+
+	Slice StringBlue;
+	StringBlue.Ptr = InputArrayRef;
+	i = 0;
+	while(*InputArrayRef != ';' && i < 4){
+		InputArrayRef++;
+		i++;
+	}
+	if(i >= 4 && *InputArrayRef != ';'){
+		return -2;
+	}
+	Assert(*InputArrayRef == ';');
+	StringBlue.Length = i;
+	InputArrayRef++;
+
+
+	int ValueRed = IsSliceRGBValue(StringRed);
+	if(ValueRed == -1) return -1;
+	int ValueGreen = IsSliceRGBValue(StringGreen);
+	if(ValueGreen == -1) return -1;
+	int ValueBlue = IsSliceRGBValue(StringBlue);
+	if(ValueBlue == -1) return -1;
+	if(ValueRed < -1 || ValueGreen < -1 || ValueBlue < -1){
+		return -1;
+	}
+	ColorStruct->R = (unsigned char)ValueRed;
+	ColorStruct->G = (unsigned char)ValueGreen;
+	ColorStruct->B = (unsigned char)ValueBlue;
+	return (int)(InputArrayRef - Array);
+}
 
 DWORD WINAPI ThreadProc(
 	void* lpParameter
@@ -567,73 +628,88 @@ DWORD WINAPI ThreadProc(
 				}
 
 			}
+			else if(strncmp(InputArray, "/setcolor ",10)==0){
+				char *InputArrayRef = InputArray + 10;
+				if(strncmp(InputArrayRef, "-c ", 3) == 0){
+					InputArrayRef += 3;
+					int Result = SetColorStructFromString(&UniformChannelColor, InputArrayRef);
+					if(Result == -2){
+						printf("Wrong format. To change the color use /setcolor [-c,-u] <red>;<green>;<blue>;\n");
+					}
+					if(Result <= 0){
+						continue;
+					}
+					InputArrayRef += Result;
+					if(*InputArrayRef == ' '){
+						InputArrayRef++;
+					}
+				}
+				else if(strncmp(InputArrayRef, "-u ", 3) == 0){
+					InputArrayRef += 3;
+					int Result = SetColorStructFromString(&UniformUserColor, InputArrayRef);
+					if(Result == -2){
+						printf("Wrong format. To change the color use /setcolor [-c,-u] <red>;<green>;<blue>;\n");
+						continue;
+					}
+					if(Result <= 0){
+						continue;
+					}
+					InputArrayRef += Result;
+					if(*InputArrayRef == ' '){
+						InputArrayRef++;
+					}
+				}
+				else{
+					printf("Wrong format. To change the color use /setcolor [-c,-u] <red>;<green>;<blue>;\n");
+					continue;
+				}
+				if(*InputArrayRef == ' '){
+					InputArrayRef++;
+				}
+
+				if(strncmp(InputArrayRef, "-c ", 3) == 0){
+					InputArrayRef += 3;
+					int Result = SetColorStructFromString(&UniformChannelColor, InputArrayRef);
+					if(Result == -2){
+						printf("Wrong format. To change the color use /setcolor [-c,-u] <red>;<green>;<blue>;\n");
+					}
+					if(Result <= 0){
+						continue;
+					}
+					InputArrayRef += Result;
+					if(*InputArrayRef == ' '){
+						InputArrayRef++;
+					}
+				} else if(strncmp(InputArrayRef, "-u ", 3) == 0){
+					InputArrayRef += 3;
+					int Result = SetColorStructFromString(&UniformUserColor, InputArrayRef);
+					if(Result == -2){
+						printf("Wrong format. To change the color use /setcolor [-c,-u] <red>;<green>;<blue>;\n");
+						continue;
+					}
+					if(Result <= 0){
+						continue;
+					}
+					InputArrayRef += Result;
+					if(*InputArrayRef == ' '){
+						InputArrayRef++;
+					}
+					else{
+						printf("Wrong format. To change the color use /setcolor [-c,-u] <red>;<green>;<blue>;\n");
+						continue;
+					}
+				}
+			}
 			else if(strncmp(InputArray, "/setchannelcolor ", 17)==0){
 				if(strcmp(InputArray + 17, "-d\n") == 0){
 					UniformChannelColor = DefaultUniformChannelColor;
 					continue;
 				}
 				char *InputArrayRef = InputArray + 17;
-
-				Slice StringRed;
-				StringRed.Ptr = InputArrayRef;
-
-				int i = 0;
-				while(*InputArrayRef != ';' && i < 4){
-					InputArrayRef++;
-					i++;
+				int Result = SetColorStructFromString(&UniformChannelColor, InputArrayRef);
+				if(Result == -2){
+					printf("Wrong format. To change the color use:\"/setchannelcolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
 				}
-				if(i >= 4 && *InputArrayRef != ';'){
-					printf("Wrong color format. To change the color use:\"/setchannel color <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
-					continue;
-				}
-				Assert(*InputArrayRef == ';');
-				InputArrayRef++;
-				StringRed.Length = i;
-
-				Slice StringGreen;
-				StringGreen.Ptr = InputArrayRef;
-				i = 0;
-				while(*InputArrayRef != ';' && i < 4){
-					InputArrayRef++;
-					i++;
-				}
-				if(i >= 4 && *InputArrayRef != ';'){
-					printf("Wrong color format. To change the color use:\"/setcolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
-					continue;
-				}
-				Assert(*InputArrayRef == ';');
-				StringGreen.Length = i;
-				InputArrayRef++;
-
-				Slice StringBlue;
-				StringBlue.Ptr = InputArrayRef;
-				i = 0;
-				while(*InputArrayRef != ';' && i < 4){
-					InputArrayRef++;
-					i++;
-				}
-				if(i >= 4 && *InputArrayRef != ';'){
-					printf("Wrong color format. To change the color use:\"/setcolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
-					continue;
-				}
-				Assert(*InputArrayRef == ';');
-				StringBlue.Length = i;
-				InputArrayRef++;
-
-
-				int ValueRed   = IsSliceRGBValue(StringRed);
-				if(ValueRed == -1) continue;
-				int ValueGreen = IsSliceRGBValue(StringGreen);
-				if(ValueGreen == -1) continue;
-				int ValueBlue  = IsSliceRGBValue(StringBlue);
-				if(ValueBlue == -1) continue;
-				if(ValueRed < -1 || ValueGreen < -1 || ValueBlue < -1){
-					continue;
-				}
-				UniformChannelColor.R = (unsigned char)ValueRed;
-				UniformChannelColor.G = (unsigned char)ValueGreen;
-				UniformChannelColor.B = (unsigned char)ValueBlue;
-				
 			}
 			else if(strncmp(InputArray, "/setusercolor ", 14)==0){
 				if(strcmp(InputArray + 14, "-d\n") == 0){
@@ -641,67 +717,10 @@ DWORD WINAPI ThreadProc(
 					continue;
 				}
 				char *InputArrayRef = InputArray + 14;
-
-				Slice StringRed;
-				StringRed.Ptr = InputArrayRef;
-
-				int i = 0;
-				while(*InputArrayRef != ';' && i < 4){
-					InputArrayRef++;
-					i++;
+				int Result = SetColorStructFromString(&UniformUserColor, InputArrayRef);
+				if(Result == -2){
+					printf("Wrong format. To change the color use:\"/setusercolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
 				}
-				if(i >= 4 && *InputArrayRef != ';'){
-					printf("Wrong color format. To change the color use:\"/setchannel color <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
-					continue;
-				}
-				Assert(*InputArrayRef == ';');
-				InputArrayRef++;
-				StringRed.Length = i;
-
-				Slice StringGreen;
-				StringGreen.Ptr = InputArrayRef;
-				i = 0;
-				while(*InputArrayRef != ';' && i < 4){
-					InputArrayRef++;
-					i++;
-				}
-				if(i >= 4 && *InputArrayRef != ';'){
-					printf("Wrong color format. To change the color use:\"/setcolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
-					continue;
-				}
-				Assert(*InputArrayRef == ';');
-				StringGreen.Length = i;
-				InputArrayRef++;
-
-				Slice StringBlue;
-				StringBlue.Ptr = InputArrayRef;
-				i = 0;
-				while(*InputArrayRef != ';' && i < 4){
-					InputArrayRef++;
-					i++;
-				}
-				if(i >= 4 && *InputArrayRef != ';'){
-					printf("Wrong color format. To change the color use:\"/setcolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
-					continue;
-				}
-				Assert(*InputArrayRef == ';');
-				StringBlue.Length = i;
-				InputArrayRef++;
-
-
-				int ValueRed   = IsSliceRGBValue(StringRed);
-				if(ValueRed == -1) continue;
-				int ValueGreen = IsSliceRGBValue(StringGreen);
-				if(ValueGreen == -1) continue;
-				int ValueBlue  = IsSliceRGBValue(StringBlue);
-				if(ValueBlue == -1) continue;
-				if(ValueRed < -1 || ValueGreen < -1 || ValueBlue < -1){
-					continue;
-				}
-				UniformUserColor.R = (unsigned char)ValueRed;
-				UniformUserColor.G = (unsigned char)ValueGreen;
-				UniformUserColor.B = (unsigned char)ValueBlue;
-				
 			}
 			else if(strcmp(InputArray, "/help\n") == 0 || strcmp(InputArray, "/h\n")==0){
 				const char *Help = "/help or /h: List of all available commands\n";
@@ -713,8 +732,8 @@ DWORD WINAPI ThreadProc(
 				const char *SetColorMode = "/setcolormode: Changes the color scheme of channel and user name.\n    \"uniform\" or \"0\": The color is equal for all channels and user names\n    \"rgb\" or \"1\": The channel and user name color is varying, but consistent for each user\n";
 				const char *SetChannelColor = "/setchannelcolor: Changes the channel color to the specified rgb color.\n    The format is: \"/setchannelcolor <red>;<green>;<blue>;\"\n";
 				const char *SetUserColor = "/setusercolor: Changes the user name color to the specified rgb color.\n    The format is: \"/setuser color <red>;<green>;<blue>;\"\n";
-				
-				printf("Available commands: \n%s%s%s%s%s%s%s%s%s=============================================================================================================\n",Help,Join,Leave,LeaveAll,List,Clear,SetColorMode,SetChannelColor,SetUserColor);
+				const char *SetColor = "/setcolor: a shorter form of changing the color of channel and username.\n    The format is: \"/setcolor [-c,-u] <red>;<green>;<blue>; [-c,-u] <red>;<green>;<blue>;\"\n        -c: changes the channel color\n        -u: changes the username color\n";
+				printf("Available commands: \n%s%s%s%s%s%s%s%s%s%s=============================================================================================================\n",Help,Join,Leave,LeaveAll,List,Clear,SetColorMode,SetChannelColor,SetUserColor,SetColor);
 			}
 			else{
 				printf("Unknown command. Use /help or /h for a list of available commands.\n");
@@ -737,9 +756,6 @@ int main() {
 	Socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	Assert(Socket != INVALID_SOCKET);
 
-
-
-
 	sockaddr_in Address = {};
 	Address.sin_family = AF_INET;
 	Address.sin_port = htons(6667);
@@ -750,8 +766,6 @@ int main() {
 		printf("Error: %d\n", Error);
 	}
 
-
-
 	const char *LoginMessage = "PASS asdf\r\nNICK justinfan15\r\n";
 	Result = send(Socket, LoginMessage,(int) strlen(LoginMessage), 0);
 	if(Result == SOCKET_ERROR){
@@ -760,7 +774,6 @@ int main() {
 	}
 	DWORD ThreadID;
 	CreateThread(0, 0, ThreadProc, NULL, 0, &ThreadID);
-
 
 	char Buffer[4096];
 
