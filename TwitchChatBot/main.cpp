@@ -1,15 +1,19 @@
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
 
+#include "math.h"
+
+
 #include "ws2tcpip.h"
 #include "stdio.h"
 #include "malloc.h"
 #include "consoleapi2.h"
 #define Assert(x) if(!(x)) __debugbreak();
 
+
+
 	
 
-#define MAX_CONST_CHAR_STRING_LEN 4096
 #define MAX_CONCURRENT_CHANNELS 64
 #define MAX_LENGTH 500
 #define MAX_COMMAND_LENGTH 20
@@ -17,209 +21,17 @@
 static char *CurrentChannels[MAX_CONCURRENT_CHANNELS] = {};
 static int CurrentChannelCount = 0;
 
-struct Arena{
-	size_t Size;
-	byte *Data;
-	size_t NextFreeIndex;
+struct RGB{
+	unsigned char R;
+	unsigned char G;
+	unsigned char B;
 };
 
-
-static Arena CreateArena(size_t Size){
-	Arena NewArena = {};
-	void *Memory = VirtualAlloc(NULL, Size, MEM_COMMIT, PAGE_READWRITE);
-	if(Memory == NULL){
-		return NewArena;
-	}
-	Assert(Memory);
-	NewArena.Size = Size;
-	NewArena.Data = (byte*) Memory;
-#ifdef _DEBUG
-	memset(NewArena.Data, 0xcd, NewArena.Size);
-#endif // _DEBUG
-
-	return NewArena;
-}
-
-static void FreeArena(Arena *Arena){
-	if(Arena->Data){
-		VirtualFree(Arena->Data, 0, MEM_RELEASE);
-		memset(Arena, 0, sizeof(Arena));
-	}
-}
-
-static void* ArenaAlloc(struct Arena *Arena, size_t Size){
-	if((Arena->Size - Arena->NextFreeIndex) >= Size){
-		void *Ptr = (Arena->Data + Arena->NextFreeIndex);
-#ifdef _DEBUG
-		memset(Ptr, 0xab, Size);
-#endif
-		Arena->NextFreeIndex+= Size;
-		return Ptr;
-	}
-	return NULL;
-}
-
-static void ResetArena(struct Arena *Arena){
-	memset(Arena->Data, 0, Arena->Size);
-#ifdef _DEBUG
-	memset(Arena->Data, 0xcd, Arena->Size);
-#endif // _DEBUG
+static RGB UniformChannelColor = {255,125,125};
+static RGB UniformUserColor = {255,0,125};
+static bool IsUniformColors = 0;
 
 
-	Arena->NextFreeIndex= 0;
-}
-
-static void* ArenaRealloc(struct Arena *Arena, void *Ptr,size_t OldSize, size_t NewSize){
-	long int Offset = (long int) ((byte*)Ptr - Arena->Data);
-	if(Offset < 0 || Offset > Arena->Size){
-		return NULL;
-	}
-	if((Arena->Size - Arena->NextFreeIndex) >= NewSize){
-		if(Offset == (Arena->NextFreeIndex - OldSize)){
-			Arena->NextFreeIndex += (NewSize-OldSize);
-#ifdef _DEBUG
-			memset((byte*)Ptr + OldSize, 0xab, (NewSize - OldSize));
-#endif
-			return Ptr;
-
-		}
-		void *NewPtr = Arena->Data + Arena->NextFreeIndex;
-		Arena->NextFreeIndex += NewSize;
-		memcpy(NewPtr, Ptr, OldSize);
-
-#ifdef _DEBUG
-		memset((byte *)NewPtr + OldSize, 0xab, (NewSize - OldSize));
-#endif
-		return NewPtr;
-	}
-	return NULL;
-}
-
-struct CustomString{
-	int Size;
-	char *Data;
-};
-
-static CustomString CreateString(Arena *Arena, const char *Src){
-	size_t SrcSize = strlen(Src);
-	CustomString NewString = {};
-	if(SrcSize > MAX_CONST_CHAR_STRING_LEN){
-		return NewString;
-	}
-	NewString.Data = (char *)ArenaAlloc(Arena, SrcSize+1);
-	if(NewString.Data){
-		NewString.Size = (int)SrcSize;
-		memcpy(NewString.Data, Src, NewString.Size);
-	}
-	NewString.Data[NewString.Size] = '\0';
-	return NewString;
-}
-
-static bool TestChannelName(CustomString Src){
-	for(int i = 0; i < Src.Size; i++){
-		bool IsUppercaseLetter = Src.Data[i] >= 'A' && Src.Data[i] <= 'Z';
-		bool IsLowercaseLetter = Src.Data[i] >= 'a' && Src.Data[i] <= 'z';
-		bool IsNumber = Src.Data[i] >= '0' && Src.Data[i] <= '9';
-		bool IsUnderScore = Src.Data[i] == '_';
-		bool IsValid = IsUppercaseLetter || IsLowercaseLetter || IsNumber || IsUnderScore;
-		if(!IsValid){
-			return 0;
-		}
-	}
-	return 1;
-}
-
-
-static void StringToLower(CustomString String){
-	for(int i = 0; i <= String.Size; i++){
-		signed char Current = String.Data[i];
-		if(Current & 0x80){
-			Current -= 0x80;
-			if((Current >= 'A' && Current <= 'Z') || (Current >= 'a' && Current <= 'z')){
-				int diff = (int)'Z' - (int)Current;
-
-				if(diff > 0){
-					Current += 32;
-				}
-			}
-			Assert(Current < 0x80);
-			if(String.Data[i] & 0x80){
-				Current += 0x80;
-			}
-
-		} else{
-			if((Current >= 'A' && Current <= 'Z') || (Current >= 'a' && Current <= 'z')){
-				int diff = (int)'Z' - (int)Current;
-
-				if(diff > 0){
-					Current += 32;
-				}
-			}
-			Assert(Current < 0x80);
-		}
-		
-		
-		String.Data[i] = Current;
-	}
-}
-
-static void FreeString(struct CustomString *String){
-	if(String->Data){
-		String->Data = NULL;
-	}
-	String->Size = 0;
-}
-enum REALLOC_RESULT{
-	REALLOC_FAILED,
-	REALLOC_SUCCESS,
-	REALLOC_FREE,
-
-	REALLOC_COUNT
-};
-
-static REALLOC_RESULT ReallocString(struct Arena *Arena,struct CustomString *String, int NewSize){
-	char *tmp = (char*) ArenaRealloc(Arena,String->Data,String->Size+1, NewSize + 1);
-	if(tmp){
-		String->Data = tmp;
-		String->Size = NewSize;
-		return REALLOC_SUCCESS;
-	}
-	if(NewSize == 0){
-		Assert(tmp == NULL);
-		String->Data = tmp;
-		String->Size = NewSize;
-		return REALLOC_FREE;
-	}
-	return REALLOC_FAILED;
-}
-
-static void ConcatinateString(struct Arena *Arena,struct CustomString *Dest, struct CustomString Src){
-	int OldSize = Dest->Size + 1;
-	Assert(Dest->Data[Dest->Size] == '\0');
-	//Dest is 0 terminated
-	int NewSize = (OldSize - 1) + Src.Size;
-
-	Assert(ReallocString(Arena,Dest, NewSize) == REALLOC_SUCCESS);
-	Assert(Dest->Size == NewSize);
-	memcpy(Dest->Data + OldSize - 1, Src.Data, Src.Size);
-	Dest->Data[Dest->Size] = '\0';
-}
-
-static bool ConcatinateCString(struct Arena *Arena,struct CustomString *Dest, const char* Src){
-	size_t SrcLen = strlen(Src);
-	if(SrcLen > MAX_CONST_CHAR_STRING_LEN){
-		return 0;
-	}
-	int OldSize = Dest->Size + 1;
-	Assert(Dest->Data[Dest->Size] == '\0');
-	//Dest is 0 terminated
-	int NewSize = (OldSize - 1) + (int)SrcLen ;
-	Assert(ReallocString(Arena,Dest, NewSize) == REALLOC_SUCCESS);
-	Assert(Dest->Size == NewSize);
-	memcpy(Dest->Data + OldSize - 1, Src, SrcLen);
-	Dest->Data[Dest->Size] = '\0';
-	return 1;
-}
 
 enum FORMAT_RESULT{
 	FORMAT_PLACEHOLDER,
@@ -245,39 +57,10 @@ enum FORMAT_RESULT{
 	FORMAT_ERROR_COUNT
 };
 
-
-
-
-
-#ifdef _DEBUG
-	#define DEBUG_FORMATTING_INPUT()\
-	*DebugCharIn = *CurrentChar;\
-	DebugCharIn++;
-#else
-	#define DEBUG_FORMATTING_INPUT()
-#endif
-#ifdef _DEBUG
-	#define DEBUG_FORMATTING_INPUT_N(n)\
-	memcpy(DebugCharIn,CurrentChar,n);\
-	DebugCharIn+=n;
-#else
-#define DEBUG_FORMATTING_INPUT_N(n)
-#endif // _DEBUG
-
-
-#ifdef _DEBUG
-#define DEBUG_FORMATTING_OUTPUT()\
-	*DebugCharOut = *BufferOutRef;\
-	DebugCharOUT++;
-#else
-#define DEBUG_FORMATTING_OUTPUT()
-#endif
-
 struct Slice{
 	char *Ptr;
 	size_t Length;
 };
-
 
 
 
@@ -346,7 +129,9 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 			CurrentChar++;
 			Slice UserName;
 			UserName.Ptr = CurrentChar;
+			unsigned UserColorCalc = (unsigned)((*(unsigned*)CurrentChar) & 0x00ffffff);
 			while(*CurrentChar != '!' && *CurrentChar != '.' && CurrentChar < BufferInEnd){
+	
 				CurrentChar++;
 			}
 			if(CurrentChar >= BufferInEnd){
@@ -367,6 +152,27 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 				return FORMAT_NON_MESSAGE;
 			}
 			UserName.Length = CurrentChar - UserName.Ptr;
+			RGB Color1 = {200,20,20};
+			RGB Color2 = {255,120,255};
+
+			unsigned char CalcUserR = (UserColorCalc >> 16 & 0xff);
+			unsigned char CalcUserG = (UserColorCalc >> 8  & 0xff);
+			unsigned char CalcUserB = (UserColorCalc	   & 0xff);
+			
+
+
+			float SpanR = (float) fabs((float)(Color1.R - Color2.R));
+			float SpanG = (float) fabs((float)(Color1.G - Color2.G));
+			float SpanB = (float) fabs((float)(Color1.B - Color2.B));
+
+			float StepSizeR = SpanR / 27.0f;
+			float StepSizeG = SpanG / 27.0f;
+			float StepSizeB = SpanB / 27.0f;
+
+			RGB UserColorRGB;
+			UserColorRGB.R = (unsigned char) (StepSizeR * (float)('z' - CalcUserR) + min(Color1.R, Color2.R));
+			UserColorRGB.G = (unsigned char) (StepSizeG * (float)('z' - CalcUserG) + min(Color1.G, Color2.G));
+			UserColorRGB.B = (unsigned char) (StepSizeB * (float)('z' - CalcUserB) + min(Color1.B, Color2.B));
 
 			
 			while(*CurrentChar != ' ' && CurrentChar < BufferInEnd){
@@ -403,12 +209,23 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 				}
 				Slice ChannelName;
 				ChannelName.Ptr = CurrentChar;
+				unsigned ChannelColorCalc = *(unsigned*)CurrentChar;
 				while(*CurrentChar != ':' && CurrentChar < BufferInEnd){
+					
 					CurrentChar++;
 				}
 				if(CurrentChar >= BufferInEnd){
 					return FORMAT_OUT_OF_BOUNDS;
 				}
+				float CalcChannelR = (float)(ChannelColorCalc >> 16 & 0xff);
+				float CalcChannelG = (float)(ChannelColorCalc >> 8 & 0xff);
+				float CalcChannelB = (float)(ChannelColorCalc & 0xff);
+
+				RGB ChannelColorRGB;
+				ChannelColorRGB.R = (unsigned char)(StepSizeR * (float)('z' - CalcChannelR) + min(Color1.R, Color2.R));
+				ChannelColorRGB.G = (unsigned char)(StepSizeG * (float)('z' - CalcChannelG) + min(Color1.G, Color2.G));
+				ChannelColorRGB.B = (unsigned char)(StepSizeB * (float)('z' - CalcChannelB) + min(Color1.B, Color2.B));
+
 				Assert(*CurrentChar == ':');
 				ChannelName.Length = CurrentChar - ChannelName.Ptr - 1;
 
@@ -435,17 +252,39 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 				//Copy To Output//
 				//////////////////
 #define SAFETY_PADDING 4
-				const char ColorEscapeChannel[] = "\033[38;2;255;125;125m";
-				int ChannelEscapeCharCount = sizeof(ColorEscapeChannel) - 1;
-				const char ColorEscapeName[] = "\033[38;2;255;0;125m";
-				int NameEscapeCharCount = sizeof(ColorEscapeName) - 1;
-				const char ColorEscapeClear[] = "\033[0m";
-				int ClearEscapeCharCount = sizeof(ColorEscapeClear) - 1;
+				char EscapeChannelColor[23] = {};
+				int EscapeChannelColorCount = 0;
+				char EscapeUserColor[23] = {};
+				int EscapeUserColorCount = 0;
+
+				const char EscapeClearColor[8] = "\033[0m";
+				int EscapeClearColorCount = (int) strlen(EscapeClearColor);
+				if(IsUniformColors){
 
 
-				size_t ExpectedSize = ChannelEscapeCharCount + ChannelName.Length + sizeof(':')
-					+ NameEscapeCharCount + UserName.Length
-					+ ClearEscapeCharCount + sizeof(':')
+					snprintf(EscapeChannelColor,23, "\033[38;2;%hhu;%hhu;%hhum", UniformChannelColor.R, UniformChannelColor.G, UniformChannelColor.B);
+					EscapeChannelColorCount = (int) strlen(EscapeChannelColor);
+
+					snprintf(EscapeUserColor, 23, "\033[38;2;%hhu;%hhu;%hhum", UniformUserColor.R, UniformUserColor.G, UniformUserColor.B);
+					EscapeUserColorCount = (int) strlen(EscapeUserColor);
+				}
+				else{
+					snprintf(EscapeChannelColor, 23, "\033[38;2;%hhu;%hhu;%hhum", ChannelColorRGB.R, ChannelColorRGB.G, ChannelColorRGB.B);
+					EscapeChannelColorCount = (int)strlen(EscapeChannelColor);
+
+					snprintf(EscapeUserColor, 23, "\033[38;2;%hhu;%hhu;%hhum", UserColorRGB.R, UserColorRGB.G, UserColorRGB.B);
+					EscapeUserColorCount = (int)strlen(EscapeUserColor);
+				}
+				Assert(EscapeChannelColorCount > 0);
+				Assert(EscapeUserColorCount > 0);
+				
+				
+				
+
+
+				size_t ExpectedSize = EscapeChannelColorCount + ChannelName.Length + sizeof(':')
+					+ EscapeUserColorCount + UserName.Length
+					+ EscapeClearColorCount + sizeof(':')
 					+ UserMessage.Length + sizeof('\n')
 					+ SAFETY_PADDING;
 
@@ -455,8 +294,8 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 				if(BufferOutSizeFree < ExpectedSize){
 					return FORMAT_OUTPUT_OUT_OF_MEMORY;
 				}
-				memcpy(BufferOutRef, ColorEscapeChannel, ChannelEscapeCharCount);
-				BufferOutRef += ChannelEscapeCharCount;
+				memcpy(BufferOutRef, EscapeChannelColor, EscapeChannelColorCount);
+				BufferOutRef += EscapeChannelColorCount;
 				Assert(BufferOutRef < BufferOutEnd);
 
 				memcpy(BufferOutRef, ChannelName.Ptr, ChannelName.Length);
@@ -467,16 +306,16 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 				BufferOutRef++;
 				Assert(BufferOutRef < BufferOutEnd);
 
-				memcpy(BufferOutRef, ColorEscapeName, NameEscapeCharCount);
-				BufferOutRef += NameEscapeCharCount;
+				memcpy(BufferOutRef, EscapeUserColor, EscapeUserColorCount);
+				BufferOutRef += EscapeUserColorCount;
 				Assert(BufferOutRef < BufferOutEnd);
 
 				memcpy(BufferOutRef, UserName.Ptr, UserName.Length);
 				BufferOutRef += UserName.Length;
 				Assert(BufferOutRef < BufferOutEnd);
 
-				memcpy(BufferOutRef, ColorEscapeClear, ClearEscapeCharCount);
-				BufferOutRef += ClearEscapeCharCount;
+				memcpy(BufferOutRef, EscapeClearColor, EscapeClearColorCount);
+				BufferOutRef += EscapeClearColorCount;
 				Assert(BufferOutRef < BufferOutEnd);
 
 				*BufferOutRef = ':';
@@ -716,8 +555,6 @@ int main() {
 	SetConsoleOutputCP(65001);
 	SetConsoleCP(65001);
 
-	Arena StringArena = CreateArena(4096);
-
 	//Init Winsock
 	WSADATA WSAData;
 	int Result = WSAStartup(MAKEWORD(2, 2), &WSAData);
@@ -740,9 +577,9 @@ int main() {
 	}
 
 
-	CustomString LoginMessage = CreateString(&StringArena, "PASS asdf\r\nNICK justinfan15\r\n");
 
-	Result = send(Socket, LoginMessage.Data, LoginMessage.Size, 0);
+	const char *LoginMessage = "PASS asdf\r\nNICK justinfan15\r\n";
+	Result = send(Socket, LoginMessage,(int) strlen(LoginMessage), 0);
 	if(Result == SOCKET_ERROR){
 		int Error = WSAGetLastError();
 		printf("Error: %d\n", Error);
