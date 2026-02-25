@@ -27,9 +27,13 @@ struct RGB{
 	unsigned char B;
 };
 
-static RGB UniformChannelColor = {255,125,125};
-static RGB UniformUserColor = {255,0,125};
-static bool IsUniformColors = 0;
+static RGB DefaultUniformChannelColor = {255,125,125};
+static RGB DefaultUniformUserColor = {255,0,125};
+static RGB UniformChannelColor = DefaultUniformChannelColor;
+static RGB UniformUserColor = DefaultUniformUserColor;
+
+
+static bool IsUniformColors = 1;
 
 
 
@@ -410,6 +414,33 @@ static int IsInArray(char* *StringArray, int ArrayFillCount, char *ToFind,int To
 	return -1;
 }
 
+static int IntPow(int x, int exp){
+	int Result = 1;
+	for(int i = 0; i < exp; i++){
+		Result *= x;
+	}
+	return Result;
+}
+
+static int IsSliceRGBValue(Slice Slice){
+	int Sum = 0;
+	for(int i = 0; i < Slice.Length; i++){
+		char CurrentChar = Slice.Ptr[(Slice.Length-1) - i];
+		if(!('0' <= CurrentChar && CurrentChar <= '9')){
+			printf("Wrong color format. To change the color use:\"/setcolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
+			return -1;
+		}
+		int CharValue = CurrentChar - '0';
+		Sum += CharValue * IntPow(10, i);
+	}
+	Assert(Sum == atol(Slice.Ptr));
+	if(Sum > 255){
+		printf("Your number %d is too big. Only numbers between 0 and 255 are allowed.\n", Sum);
+		return -2;
+	}
+	return Sum;
+
+}
 
 
 DWORD WINAPI ThreadProc(
@@ -536,6 +567,142 @@ DWORD WINAPI ThreadProc(
 				}
 
 			}
+			else if(strncmp(InputArray, "/setchannelcolor ", 17)==0){
+				if(strcmp(InputArray + 17, "-d\n") == 0){
+					UniformChannelColor = DefaultUniformChannelColor;
+					continue;
+				}
+				char *InputArrayRef = InputArray + 17;
+
+				Slice StringRed;
+				StringRed.Ptr = InputArrayRef;
+
+				int i = 0;
+				while(*InputArrayRef != ';' && i < 4){
+					InputArrayRef++;
+					i++;
+				}
+				if(i >= 4 && *InputArrayRef != ';'){
+					printf("Wrong color format. To change the color use:\"/setchannel color <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
+					continue;
+				}
+				Assert(*InputArrayRef == ';');
+				InputArrayRef++;
+				StringRed.Length = i;
+
+				Slice StringGreen;
+				StringGreen.Ptr = InputArrayRef;
+				i = 0;
+				while(*InputArrayRef != ';' && i < 4){
+					InputArrayRef++;
+					i++;
+				}
+				if(i >= 4 && *InputArrayRef != ';'){
+					printf("Wrong color format. To change the color use:\"/setcolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
+					continue;
+				}
+				Assert(*InputArrayRef == ';');
+				StringGreen.Length = i;
+				InputArrayRef++;
+
+				Slice StringBlue;
+				StringBlue.Ptr = InputArrayRef;
+				i = 0;
+				while(*InputArrayRef != ';' && i < 4){
+					InputArrayRef++;
+					i++;
+				}
+				if(i >= 4 && *InputArrayRef != ';'){
+					printf("Wrong color format. To change the color use:\"/setcolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
+					continue;
+				}
+				Assert(*InputArrayRef == ';');
+				StringBlue.Length = i;
+				InputArrayRef++;
+
+
+				int ValueRed   = IsSliceRGBValue(StringRed);
+				if(ValueRed == -1) continue;
+				int ValueGreen = IsSliceRGBValue(StringGreen);
+				if(ValueGreen == -1) continue;
+				int ValueBlue  = IsSliceRGBValue(StringBlue);
+				if(ValueBlue == -1) continue;
+				if(ValueRed < -1 || ValueGreen < -1 || ValueBlue < -1){
+					continue;
+				}
+				UniformChannelColor.R = (unsigned char)ValueRed;
+				UniformChannelColor.G = (unsigned char)ValueGreen;
+				UniformChannelColor.B = (unsigned char)ValueBlue;
+				
+			}
+			else if(strncmp(InputArray, "/setusercolor ", 14)==0){
+				if(strcmp(InputArray + 14, "-d\n") == 0){
+					UniformUserColor = DefaultUniformUserColor;
+					continue;
+				}
+				char *InputArrayRef = InputArray + 14;
+
+				Slice StringRed;
+				StringRed.Ptr = InputArrayRef;
+
+				int i = 0;
+				while(*InputArrayRef != ';' && i < 4){
+					InputArrayRef++;
+					i++;
+				}
+				if(i >= 4 && *InputArrayRef != ';'){
+					printf("Wrong color format. To change the color use:\"/setchannel color <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
+					continue;
+				}
+				Assert(*InputArrayRef == ';');
+				InputArrayRef++;
+				StringRed.Length = i;
+
+				Slice StringGreen;
+				StringGreen.Ptr = InputArrayRef;
+				i = 0;
+				while(*InputArrayRef != ';' && i < 4){
+					InputArrayRef++;
+					i++;
+				}
+				if(i >= 4 && *InputArrayRef != ';'){
+					printf("Wrong color format. To change the color use:\"/setcolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
+					continue;
+				}
+				Assert(*InputArrayRef == ';');
+				StringGreen.Length = i;
+				InputArrayRef++;
+
+				Slice StringBlue;
+				StringBlue.Ptr = InputArrayRef;
+				i = 0;
+				while(*InputArrayRef != ';' && i < 4){
+					InputArrayRef++;
+					i++;
+				}
+				if(i >= 4 && *InputArrayRef != ';'){
+					printf("Wrong color format. To change the color use:\"/setcolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
+					continue;
+				}
+				Assert(*InputArrayRef == ';');
+				StringBlue.Length = i;
+				InputArrayRef++;
+
+
+				int ValueRed   = IsSliceRGBValue(StringRed);
+				if(ValueRed == -1) continue;
+				int ValueGreen = IsSliceRGBValue(StringGreen);
+				if(ValueGreen == -1) continue;
+				int ValueBlue  = IsSliceRGBValue(StringBlue);
+				if(ValueBlue == -1) continue;
+				if(ValueRed < -1 || ValueGreen < -1 || ValueBlue < -1){
+					continue;
+				}
+				UniformUserColor.R = (unsigned char)ValueRed;
+				UniformUserColor.G = (unsigned char)ValueGreen;
+				UniformUserColor.B = (unsigned char)ValueBlue;
+				
+			}
 			else if(strcmp(InputArray, "/help\n") == 0 || strcmp(InputArray, "/h\n")==0){
 				const char *Help = "/help or /h: List of all available commands\n";
 				const char *Join = "/join <channel>: Joins the chat of <channel>\n";
@@ -544,7 +711,10 @@ DWORD WINAPI ThreadProc(
 				const char *List = "/list: Lists all currently connected channels\n";
 				const char *Clear = "/clear: Clears the screen.\n";
 				const char *SetColorMode = "/setcolormode: Changes the color scheme of channel and user name.\n    \"uniform\" or \"0\": The color is equal for all channels and user names\n    \"rgb\" or \"1\": The channel and user name color is varying, but consistent for each user\n";
-				printf("Available commands: \n%s%s%s%s%s%s%s=============================================================================================================\n",Help,Join,Leave,LeaveAll,List,Clear,SetColorMode);
+				const char *SetChannelColor = "/setchannelcolor: Changes the channel color to the specified rgb color.\n    The format is: \"/setchannelcolor <red>;<green>;<blue>;\"\n";
+				const char *SetUserColor = "/setusercolor: Changes the user name color to the specified rgb color.\n    The format is: \"/setuser color <red>;<green>;<blue>;\"\n";
+				
+				printf("Available commands: \n%s%s%s%s%s%s%s%s%s=============================================================================================================\n",Help,Join,Leave,LeaveAll,List,Clear,SetColorMode,SetChannelColor,SetUserColor);
 			}
 			else{
 				printf("Unknown command. Use /help or /h for a list of available commands.\n");
