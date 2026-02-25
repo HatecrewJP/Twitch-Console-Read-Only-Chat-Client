@@ -521,6 +521,21 @@ DWORD WINAPI ThreadProc(
 			else if(strcmp(InputArray, "/clear\n")==0){
 				printf("\033[2J\033[H");
 			}
+			else if(strncmp(InputArray, "/setcolormode ",14)==0){
+				if(strcmp(InputArray + 14,"0\n") == 0|| strcmp(InputArray + 14, "uniform\n") == 0){
+					IsUniformColors = 1;
+					printf("Color mode: Uniform\n");
+				}
+
+				else if(strcmp(InputArray + 14, "1\n") == 0 || strcmp(InputArray + 14, "rgb\n") == 0){
+					IsUniformColors = 0;
+					printf("Color mode: RGB\n");
+				}
+				else{
+					printf("Unknown color mode.\n");
+				}
+
+			}
 			else if(strcmp(InputArray, "/help\n") == 0 || strcmp(InputArray, "/h\n")==0){
 				const char *Help = "/help or /h: List of all available commands\n";
 				const char *Join = "/join <channel>: Joins the chat of <channel>\n";
@@ -528,7 +543,8 @@ DWORD WINAPI ThreadProc(
 				const char *LeaveAll = "/leaveall: Leaves all currently joined channels\n";
 				const char *List = "/list: Lists all currently connected channels\n";
 				const char *Clear = "/clear: Clears the screen.\n";
-				printf("Available commands: \n%s%s%s%s%s%s=====================================================\n",Help,Join,Leave,LeaveAll,List,Clear);
+				const char *SetColorMode = "/setcolormode: Changes the color scheme of channel and user name.\n    \"uniform\" or \"0\": The color is equal for all channels and user names\n    \"rgb\" or \"1\": The channel and user name color is varying, but consistent for each user\n";
+				printf("Available commands: \n%s%s%s%s%s%s%s=============================================================================================================\n",Help,Join,Leave,LeaveAll,List,Clear,SetColorMode);
 			}
 			else{
 				printf("Unknown command. Use /help or /h for a list of available commands.\n");
