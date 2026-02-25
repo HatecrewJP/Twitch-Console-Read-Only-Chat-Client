@@ -98,7 +98,7 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 	}
 	while (*CurrentChar != '\0') {
 		bool IsPing = !strncmp(CurrentChar, "PING", 4);
-		if (IsPing) {
+		if(IsPing){
 			//Output: "PONG <text in>\r\n"
 			Assert(memcpy(BufferOut, "PONG", 4));
 			CurrentChar += 4;
@@ -106,15 +106,15 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 			int i = 4;
 			//copy <text in>
 			//6 = 4(PONG) + 2(\r\n)
-			while ((i < BufferOutSize - 6) && (*CurrentChar != '\r') && CurrentChar < BufferInEnd) {
+			while((i < BufferOutSize - 6) && (*CurrentChar != '\r') && CurrentChar < BufferInEnd){
 				BufferOut[i] = *CurrentChar;
 				CurrentChar++;
 				i++;
 			}
-			if (CurrentChar >= BufferInEnd) {
+			if(CurrentChar >= BufferInEnd){
 				return FORMAT_OUT_OF_BOUNDS;
 			}
-			if ((*CurrentChar != '\r') && (i > (BufferOutSize - 6))) {
+			if((*CurrentChar != '\r') && (i > (BufferOutSize - 6))){
 				return FORMAT_OUTPUT_OUT_OF_MEMORY;
 			}
 			Assert(strncmp(CurrentChar, "\r\n", 2) == 0);
@@ -122,143 +122,69 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 			CurrentChar += 2;
 			return FORMAT_PING;
 		}
-		//recover buffer overflow
-		if (*CurrentChar != ':') {
-			while (*CurrentChar != '\n' && CurrentChar < BufferInEnd) {
-				CurrentChar++;
-			}
-			if (CurrentChar >= BufferInEnd) {
-				return FORMAT_NO_MESSAGE;
-			}
-			Assert(*(CurrentChar - 1) == '\r' && *CurrentChar == '\n');
-			CurrentChar++;
-			if (CurrentChar >= BufferInEnd) {
-				return FORMAT_OUT_OF_BOUNDS;
-			}
-			static unsigned DroppedMessageCount = 0;
-			DroppedMessageCount++;
-			printf("\033[38;2;255;0;0mTotal Dropped Messages: %d\n\033[0m", DroppedMessageCount);
-		}
-		if (*CurrentChar == ':') {
-			while (*CurrentChar == ':') {
+
+		if(*CurrentChar == ':'){
+			while(*CurrentChar == ':'){
 				///////////////////
 				//Extract Message//
 				///////////////////
 				CurrentChar++;
 				Slice UserName;
 				UserName.Ptr = CurrentChar;
-				while (*CurrentChar != '!' && *CurrentChar != '.' && CurrentChar < BufferInEnd) {
+				unsigned UserColorCalc = (unsigned)((*(unsigned*)CurrentChar) & 0x00ffffff);
+				while(*CurrentChar != '!' && *CurrentChar != '.' && CurrentChar < BufferInEnd){
 					CurrentChar++;
 				}
-				if (CurrentChar >= BufferInEnd) {
+				if(CurrentChar >= BufferInEnd){
 					return FORMAT_OUT_OF_BOUNDS;
 				}
-				if (*CurrentChar == '.') {
-					while (*CurrentChar != '\n' && CurrentChar < BufferInEnd) {
+				if(*CurrentChar == '.'){
+					while(*CurrentChar != '\n' && CurrentChar < BufferInEnd){
 						CurrentChar++;
 					}
-					if (CurrentChar >= BufferInEnd) {
+					if(CurrentChar >= BufferInEnd){
 						return FORMAT_OUT_OF_BOUNDS;
 					}
-					Assert(*(CurrentChar - 1) == '\r' && *CurrentChar == '\n');
+					Assert(*(CurrentChar-1) == '\r' && *CurrentChar == '\n');
 					CurrentChar++;
-					if (CurrentChar >= BufferInEnd) {
+					if(CurrentChar >= BufferInEnd){
 						return FORMAT_OUT_OF_BOUNDS;
 					}
 					return FORMAT_NON_MESSAGE;
 				}
 				UserName.Length = CurrentChar - UserName.Ptr;
-	bool IsPing = !strncmp(CurrentChar, "PING", 4);
-	if(IsPing){
-		//Output: "PONG <text in>\r\n"
-		Assert(memcpy(BufferOut, "PONG", 4));
-		CurrentChar += 4;
-		//start writing after "PONG"
-		int i = 4;
-		//copy <text in>
-		//6 = 4(PONG) + 2(\r\n)
-		while((i < BufferOutSize - 6) && (*CurrentChar != '\r') && CurrentChar < BufferInEnd){
-			BufferOut[i] = *CurrentChar;
-			CurrentChar++;
-			i++;
-		}
-		if(CurrentChar >= BufferInEnd){
-			return FORMAT_OUT_OF_BOUNDS;
-		}
-		if((*CurrentChar != '\r') && (i > (BufferOutSize - 6))){
-			return FORMAT_OUTPUT_OUT_OF_MEMORY;
-		}
-		Assert(strncmp(CurrentChar, "\r\n", 2) == 0);
-		memcpy(&BufferOut[i], "\r\n", 2);
-		CurrentChar += 2;
-		return FORMAT_PING;
-	}
+				RGB Color1 = {200,20,20};
+				RGB Color2 = {255,120,255};
 
-	if(*CurrentChar == ':'){
-		while(*CurrentChar == ':'){
-			///////////////////
-			//Extract Message//
-			///////////////////
-			CurrentChar++;
-			Slice UserName;
-			UserName.Ptr = CurrentChar;
-			unsigned UserColorCalc = (unsigned)((*(unsigned*)CurrentChar) & 0x00ffffff);
-			while(*CurrentChar != '!' && *CurrentChar != '.' && CurrentChar < BufferInEnd){
-	
-				CurrentChar++;
-			}
-			if(CurrentChar >= BufferInEnd){
-				return FORMAT_OUT_OF_BOUNDS;
-			}
-			if(*CurrentChar == '.'){
-				while(*CurrentChar != '\n' && CurrentChar < BufferInEnd){
+				unsigned char CalcUserR = (UserColorCalc >> 16 & 0xff);
+				unsigned char CalcUserG = (UserColorCalc >> 8  & 0xff);
+				unsigned char CalcUserB = (UserColorCalc	   & 0xff);
+				
+				float SpanR = (float) fabs((float)(Color1.R - Color2.R));
+				float SpanG = (float) fabs((float)(Color1.G - Color2.G));
+				float SpanB = (float) fabs((float)(Color1.B - Color2.B));
+
+				float StepSizeR = SpanR / 27.0f;
+				float StepSizeG = SpanG / 27.0f;
+				float StepSizeB = SpanB / 27.0f;
+
+				RGB UserColorRGB;
+				UserColorRGB.R = (unsigned char) (StepSizeR * (float)('z' - CalcUserR) + min(Color1.R, Color2.R));
+				UserColorRGB.G = (unsigned char) (StepSizeG * (float)('z' - CalcUserG) + min(Color1.G, Color2.G));
+				UserColorRGB.B = (unsigned char) (StepSizeB * (float)('z' - CalcUserB) + min(Color1.B, Color2.B));
+
+				
+				while(*CurrentChar != ' ' && CurrentChar < BufferInEnd){
 					CurrentChar++;
 				}
 				if(CurrentChar >= BufferInEnd){
 					return FORMAT_OUT_OF_BOUNDS;
 				}
-				Assert(*(CurrentChar-1) == '\r' && *CurrentChar == '\n');
+				Assert(*CurrentChar == ' ');
 				CurrentChar++;
 				if(CurrentChar >= BufferInEnd){
 					return FORMAT_OUT_OF_BOUNDS;
 				}
-				return FORMAT_NON_MESSAGE;
-			}
-			UserName.Length = CurrentChar - UserName.Ptr;
-			RGB Color1 = {200,20,20};
-			RGB Color2 = {255,120,255};
-
-			unsigned char CalcUserR = (UserColorCalc >> 16 & 0xff);
-			unsigned char CalcUserG = (UserColorCalc >> 8  & 0xff);
-			unsigned char CalcUserB = (UserColorCalc	   & 0xff);
-			
-
-
-			float SpanR = (float) fabs((float)(Color1.R - Color2.R));
-			float SpanG = (float) fabs((float)(Color1.G - Color2.G));
-			float SpanB = (float) fabs((float)(Color1.B - Color2.B));
-
-			float StepSizeR = SpanR / 27.0f;
-			float StepSizeG = SpanG / 27.0f;
-			float StepSizeB = SpanB / 27.0f;
-
-			RGB UserColorRGB;
-			UserColorRGB.R = (unsigned char) (StepSizeR * (float)('z' - CalcUserR) + min(Color1.R, Color2.R));
-			UserColorRGB.G = (unsigned char) (StepSizeG * (float)('z' - CalcUserG) + min(Color1.G, Color2.G));
-			UserColorRGB.B = (unsigned char) (StepSizeB * (float)('z' - CalcUserB) + min(Color1.B, Color2.B));
-
-			
-			while(*CurrentChar != ' ' && CurrentChar < BufferInEnd){
-				CurrentChar++;
-			}
-			if(CurrentChar >= BufferInEnd){
-				return FORMAT_OUT_OF_BOUNDS;
-			}
-			Assert(*CurrentChar == ' ');
-			CurrentChar++;
-			if(CurrentChar >= BufferInEnd){
-				return FORMAT_OUT_OF_BOUNDS;
-			}
 
 				Slice MessageType;
 				MessageType.Ptr = CurrentChar;
@@ -266,41 +192,41 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 					CurrentChar++;
 				}
 
-			if(CurrentChar >= BufferInEnd){
-				return FORMAT_OUT_OF_BOUNDS;
-			}
-			MessageType.Length = CurrentChar - MessageType.Ptr;
-			CurrentChar++;
-			if(CurrentChar >= BufferInEnd){
-				return FORMAT_OUT_OF_BOUNDS;
-			}
-			if(strncmp(MessageType.Ptr, "PRIVMSG",7) == 0){
-				Assert(*CurrentChar == '#');
+				if(CurrentChar >= BufferInEnd){
+					return FORMAT_OUT_OF_BOUNDS;
+				}
+				MessageType.Length = CurrentChar - MessageType.Ptr;
 				CurrentChar++;
 				if(CurrentChar >= BufferInEnd){
 					return FORMAT_OUT_OF_BOUNDS;
 				}
-				Slice ChannelName;
-				ChannelName.Ptr = CurrentChar;
-				unsigned ChannelColorCalc = *(unsigned*)CurrentChar;
-				while(*CurrentChar != ':' && CurrentChar < BufferInEnd){
-					
+				if(strncmp(MessageType.Ptr, "PRIVMSG",7) == 0){
+					Assert(*CurrentChar == '#');
 					CurrentChar++;
-				}
-				if(CurrentChar >= BufferInEnd){
-					return FORMAT_OUT_OF_BOUNDS;
-				}
-				float CalcChannelR = (float)(ChannelColorCalc >> 16 & 0xff);
-				float CalcChannelG = (float)(ChannelColorCalc >> 8 & 0xff);
-				float CalcChannelB = (float)(ChannelColorCalc & 0xff);
+					if(CurrentChar >= BufferInEnd){
+						return FORMAT_OUT_OF_BOUNDS;
+					}
+					Slice ChannelName;
+					ChannelName.Ptr = CurrentChar;
+					unsigned ChannelColorCalc = *(unsigned*)CurrentChar;
+					while(*CurrentChar != ':' && CurrentChar < BufferInEnd){
+						
+						CurrentChar++;
+					}
+					if(CurrentChar >= BufferInEnd){
+						return FORMAT_OUT_OF_BOUNDS;
+					}
+					float CalcChannelR = (float)(ChannelColorCalc >> 16 & 0xff);
+					float CalcChannelG = (float)(ChannelColorCalc >> 8 & 0xff);
+					float CalcChannelB = (float)(ChannelColorCalc & 0xff);
 
-				RGB ChannelColorRGB;
-				ChannelColorRGB.R = (unsigned char)(StepSizeR * (float)('z' - CalcChannelR) + min(Color1.R, Color2.R));
-				ChannelColorRGB.G = (unsigned char)(StepSizeG * (float)('z' - CalcChannelG) + min(Color1.G, Color2.G));
-				ChannelColorRGB.B = (unsigned char)(StepSizeB * (float)('z' - CalcChannelB) + min(Color1.B, Color2.B));
+					RGB ChannelColorRGB;
+					ChannelColorRGB.R = (unsigned char)(StepSizeR * (float)('z' - CalcChannelR) + min(Color1.R, Color2.R));
+					ChannelColorRGB.G = (unsigned char)(StepSizeG * (float)('z' - CalcChannelG) + min(Color1.G, Color2.G));
+					ChannelColorRGB.B = (unsigned char)(StepSizeB * (float)('z' - CalcChannelB) + min(Color1.B, Color2.B));
 
-				Assert(*CurrentChar == ':');
-				ChannelName.Length = CurrentChar - ChannelName.Ptr - 1;
+					Assert(*CurrentChar == ':');
+					ChannelName.Length = CurrentChar - ChannelName.Ptr - 1;
 
 					CurrentChar++;
 					if (CurrentChar >= BufferInEnd) {
@@ -324,52 +250,45 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 					//////////////////
 					//Copy To Output//
 					//////////////////
-#define SAFETY_PADDING 4
-				char EscapeChannelColor[23] = {};
-				int EscapeChannelColorCount = 0;
-				char EscapeUserColor[23] = {};
-				int EscapeUserColorCount = 0;
+#define	SAFETY_PADDING 4
+					char EscapeChannelColor[23] = {};
+					int EscapeChannelColorCount = 0;
+					char EscapeUserColor[23] = {};
+					int EscapeUserColorCount = 0;
 
-				const char EscapeClearColor[8] = "\033[0m";
-				int EscapeClearColorCount = (int) strlen(EscapeClearColor);
-				if(IsUniformColors){
+					const char EscapeClearColor[8] = "\033[0m";
+					int EscapeClearColorCount = (int) strlen(EscapeClearColor);
+					if(IsUniformColors){
+						snprintf(EscapeChannelColor,23, "\033[38;2;%hhu;%hhu;%hhum", UniformChannelColor.R, UniformChannelColor.G, UniformChannelColor.B);
+						EscapeChannelColorCount = (int) strlen(EscapeChannelColor);
 
+						snprintf(EscapeUserColor, 23, "\033[38;2;%hhu;%hhu;%hhum", UniformUserColor.R, UniformUserColor.G, UniformUserColor.B);
+						EscapeUserColorCount = (int) strlen(EscapeUserColor);
+					}
+					else{
+						snprintf(EscapeChannelColor, 23, "\033[38;2;%hhu;%hhu;%hhum", ChannelColorRGB.R, ChannelColorRGB.G, ChannelColorRGB.B);
+						EscapeChannelColorCount = (int)strlen(EscapeChannelColor);
 
-					snprintf(EscapeChannelColor,23, "\033[38;2;%hhu;%hhu;%hhum", UniformChannelColor.R, UniformChannelColor.G, UniformChannelColor.B);
-					EscapeChannelColorCount = (int) strlen(EscapeChannelColor);
-
-					snprintf(EscapeUserColor, 23, "\033[38;2;%hhu;%hhu;%hhum", UniformUserColor.R, UniformUserColor.G, UniformUserColor.B);
-					EscapeUserColorCount = (int) strlen(EscapeUserColor);
-				}
-				else{
-					snprintf(EscapeChannelColor, 23, "\033[38;2;%hhu;%hhu;%hhum", ChannelColorRGB.R, ChannelColorRGB.G, ChannelColorRGB.B);
-					EscapeChannelColorCount = (int)strlen(EscapeChannelColor);
-
-					snprintf(EscapeUserColor, 23, "\033[38;2;%hhu;%hhu;%hhum", UserColorRGB.R, UserColorRGB.G, UserColorRGB.B);
-					EscapeUserColorCount = (int)strlen(EscapeUserColor);
-				}
-				Assert(EscapeChannelColorCount > 0);
-				Assert(EscapeUserColorCount > 0);
-				
-				
-				
-
-
-				size_t ExpectedSize = EscapeChannelColorCount + ChannelName.Length + sizeof(':')
-					+ EscapeUserColorCount + UserName.Length
-					+ EscapeClearColorCount + sizeof(':')
-					+ UserMessage.Length + sizeof('\n')
-					+ SAFETY_PADDING;
-
+						snprintf(EscapeUserColor, 23, "\033[38;2;%hhu;%hhu;%hhum", UserColorRGB.R, UserColorRGB.G, UserColorRGB.B);
+						EscapeUserColorCount = (int)strlen(EscapeUserColor);
+					}
+					Assert(EscapeChannelColorCount > 0);
+					Assert(EscapeUserColorCount > 0);
+					
+					size_t ExpectedSize = EscapeChannelColorCount + ChannelName.Length + sizeof(':')
+						+ EscapeUserColorCount + UserName.Length
+						+ EscapeClearColorCount + sizeof(':')
+						+ UserMessage.Length + sizeof('\n')
+						+ SAFETY_PADDING;
 
 					long int BufferOutSizeFree = (long int)(BufferOutEnd - BufferOutRef);
 
-				if(BufferOutSizeFree < ExpectedSize){
-					return FORMAT_OUTPUT_OUT_OF_MEMORY;
-				}
-				memcpy(BufferOutRef, EscapeChannelColor, EscapeChannelColorCount);
-				BufferOutRef += EscapeChannelColorCount;
-				Assert(BufferOutRef < BufferOutEnd);
+					if(BufferOutSizeFree < ExpectedSize){
+						return FORMAT_OUTPUT_OUT_OF_MEMORY;
+					}
+					memcpy(BufferOutRef, EscapeChannelColor, EscapeChannelColorCount);
+					BufferOutRef += EscapeChannelColorCount;
+					Assert(BufferOutRef < BufferOutEnd);
 
 					memcpy(BufferOutRef, ChannelName.Ptr, ChannelName.Length);
 					BufferOutRef += ChannelName.Length;
@@ -379,17 +298,17 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 					BufferOutRef++;
 					Assert(BufferOutRef < BufferOutEnd);
 
-				memcpy(BufferOutRef, EscapeUserColor, EscapeUserColorCount);
-				BufferOutRef += EscapeUserColorCount;
-				Assert(BufferOutRef < BufferOutEnd);
+					memcpy(BufferOutRef, EscapeUserColor, EscapeUserColorCount);
+					BufferOutRef += EscapeUserColorCount;
+					Assert(BufferOutRef < BufferOutEnd);
 
 					memcpy(BufferOutRef, UserName.Ptr, UserName.Length);
 					BufferOutRef += UserName.Length;
 					Assert(BufferOutRef < BufferOutEnd);
 
-				memcpy(BufferOutRef, EscapeClearColor, EscapeClearColorCount);
-				BufferOutRef += EscapeClearColorCount;
-				Assert(BufferOutRef < BufferOutEnd);
+					memcpy(BufferOutRef, EscapeClearColor, EscapeClearColorCount);
+					BufferOutRef += EscapeClearColorCount;
+					Assert(BufferOutRef < BufferOutEnd);
 
 					*BufferOutRef = ':';
 					BufferOutRef++;
@@ -443,7 +362,7 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 					return FORMAT_NON_MESSAGE;
 				}
 			}
-		
+			
 		}
 		else {
 			return FORMAT_NON_MESSAGE;
@@ -579,8 +498,6 @@ DWORD WINAPI ThreadProc(
 						} else{
 							printf("Channel Name max 25 characters.\n");
 						}
-					
-					
 				} else{
 					printf("Channel Name max 25 characters.\n");
 				}
@@ -613,18 +530,11 @@ DWORD WINAPI ThreadProc(
 				const char *Clear = "/clear: Clears the screen.\n";
 				printf("Available commands: \n%s%s%s%s%s%s=====================================================\n",Help,Join,Leave,LeaveAll,List,Clear);
 			}
-
-
-
 			else{
 				printf("Unknown command. Use /help or /h for a list of available commands.\n");
 			}
-			
-
 		}
-
 	}
-		
 	lpParameter = 0;
 }
 
