@@ -62,7 +62,10 @@ static RGB UniformChannelColor = DefaultUniformChannelColor;
 static RGB UniformUserColor = DefaultUniformUserColor;
 
 
+static SOCKET Socket = {};
 static bool IsUniformColors = 1;
+
+static int GlobalRunning = 1;
 
 enum FORMAT_RESULT{
 	FORMAT_PLACEHOLDER,
@@ -120,70 +123,70 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 	}
 
 	char *BufferInEnd = BufferIn + BufferInSize;
-	char *CurrentChar = BufferIn;
+	char *BufferInRef = BufferIn;
 	char *BufferOutRef = BufferOut;
 	char *BufferOutEnd = BufferOut + BufferOutSize;
 
 	if (BufferInSize < 4) {
 		return FORMAT_BUFFER_IN_TOO_SMALL;
 	}
-	while (*CurrentChar != '\0') {
-		bool IsPing = !strncmp(CurrentChar, "PING", 4);
+	while (*BufferInRef != '\0') {
+		bool IsPing = !strncmp(BufferInRef, "PING", 4);
 		if(IsPing){
 			//Output: "PONG <text in>\r\n"
 			Assert(memcpy(BufferOut, "PONG", 4));
-			CurrentChar += 4;
+			BufferInRef += 4;
 			//start writing after "PONG"
 			int i = 4;
 			//copy <text in>
 			//6 = 4(PONG) + 2(\r\n)
-			while((i < BufferOutSize - 6) && (*CurrentChar != '\r') && CurrentChar < BufferInEnd){
-				BufferOut[i] = *CurrentChar;
-				CurrentChar++;
+			while((i < BufferOutSize - 6) && (*BufferInRef != '\r') && BufferInRef < BufferInEnd){
+				BufferOut[i] = *BufferInRef;
+				BufferInRef++;
 				i++;
 			}
-			if(CurrentChar >= BufferInEnd){
+			if(BufferInRef >= BufferInEnd){
 				return FORMAT_OUT_OF_BOUNDS;
 			}
-			if((*CurrentChar != '\r') && (i > (BufferOutSize - 6))){
+			if((*BufferInRef != '\r') && (i > (BufferOutSize - 6))){
 				return FORMAT_OUTPUT_OUT_OF_MEMORY;
 			}
-			Assert(strncmp(CurrentChar, "\r\n", 2) == 0);
+			Assert(strncmp(BufferInRef, "\r\n", 2) == 0);
 			memcpy(&BufferOut[i], "\r\n", 2);
-			CurrentChar += 2;
+			BufferInRef += 2;
 			return FORMAT_PING;
 		}
 
-		if(*CurrentChar == ':'){
-			while(*CurrentChar == ':'){
+		if(*BufferInRef == ':'){
+			while(*BufferInRef == ':'){
 				///////////////////
 				//Extract Message//
 				///////////////////
-				CurrentChar++;
+				BufferInRef++;
 				Slice UserName;
-				UserName.Ptr = CurrentChar;
-				unsigned UserColorCalc = (unsigned)((*(unsigned*)CurrentChar) & 0x00ffffff);
-				while(*CurrentChar != '!' && *CurrentChar != '.' && CurrentChar < BufferInEnd){
-					CurrentChar++;
+				UserName.Ptr = BufferInRef;
+				unsigned UserColorCalc = (unsigned)((*(unsigned*)BufferInRef) & 0x00ffffff);
+				while(*BufferInRef != '!' && *BufferInRef != '.' && BufferInRef < BufferInEnd){
+					BufferInRef++;
 				}
-				if(CurrentChar >= BufferInEnd){
+				if(BufferInRef >= BufferInEnd){
 					return FORMAT_OUT_OF_BOUNDS;
 				}
-				if(*CurrentChar == '.'){
-					while(*CurrentChar != '\n' && CurrentChar < BufferInEnd){
-						CurrentChar++;
+				if(*BufferInRef == '.'){
+					while(*BufferInRef != '\n' && BufferInRef < BufferInEnd){
+						BufferInRef++;
 					}
-					if(CurrentChar >= BufferInEnd){
+					if(BufferInRef >= BufferInEnd){
 						return FORMAT_OUT_OF_BOUNDS;
 					}
-					Assert(*(CurrentChar-1) == '\r' && *CurrentChar == '\n');
-					CurrentChar++;
-					if(CurrentChar >= BufferInEnd){
+					Assert(*(BufferInRef-1) == '\r' && *BufferInRef == '\n');
+					BufferInRef++;
+					if(BufferInRef >= BufferInEnd){
 						return FORMAT_OUT_OF_BOUNDS;
 					}
 					return FORMAT_NON_MESSAGE;
 				}
-				UserName.Length = CurrentChar - UserName.Ptr;
+				UserName.Length = BufferInRef - UserName.Ptr;
 				RGB Color1 = {200,20,20};
 				RGB Color2 = {255,120,255};
 
@@ -205,46 +208,46 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 				UserColorRGB.B = (unsigned char) (StepSizeB * (float)('z' - CalcUserB) + min(Color1.B, Color2.B));
 
 				
-				while(*CurrentChar != ' ' && CurrentChar < BufferInEnd){
-					CurrentChar++;
+				while(*BufferInRef != ' ' && BufferInRef < BufferInEnd){
+					BufferInRef++;
 				}
-				if(CurrentChar >= BufferInEnd){
+				if(BufferInRef >= BufferInEnd){
 					return FORMAT_OUT_OF_BOUNDS;
 				}
-				Assert(*CurrentChar == ' ');
-				CurrentChar++;
-				if(CurrentChar >= BufferInEnd){
+				Assert(*BufferInRef == ' ');
+				BufferInRef++;
+				if(BufferInRef >= BufferInEnd){
 					return FORMAT_OUT_OF_BOUNDS;
 				}
 
 				Slice MessageType;
-				MessageType.Ptr = CurrentChar;
-				while (*CurrentChar != ' ' && CurrentChar < BufferInEnd) {
-					CurrentChar++;
+				MessageType.Ptr = BufferInRef;
+				while (*BufferInRef != ' ' && BufferInRef < BufferInEnd) {
+					BufferInRef++;
 				}
 
-				if(CurrentChar >= BufferInEnd){
+				if(BufferInRef >= BufferInEnd){
 					return FORMAT_OUT_OF_BOUNDS;
 				}
-				MessageType.Length = CurrentChar - MessageType.Ptr;
-				CurrentChar++;
-				if(CurrentChar >= BufferInEnd){
+				MessageType.Length = BufferInRef - MessageType.Ptr;
+				BufferInRef++;
+				if(BufferInRef >= BufferInEnd){
 					return FORMAT_OUT_OF_BOUNDS;
 				}
 				if(strncmp(MessageType.Ptr, "PRIVMSG",7) == 0){
-					Assert(*CurrentChar == '#');
-					CurrentChar++;
-					if(CurrentChar >= BufferInEnd){
+					Assert(*BufferInRef == '#');
+					BufferInRef++;
+					if(BufferInRef >= BufferInEnd){
 						return FORMAT_OUT_OF_BOUNDS;
 					}
 					Slice ChannelName;
-					ChannelName.Ptr = CurrentChar;
-					unsigned ChannelColorCalc = *(unsigned*)CurrentChar;
-					while(*CurrentChar != ':' && CurrentChar < BufferInEnd){
+					ChannelName.Ptr = BufferInRef;
+					unsigned ChannelColorCalc = *(unsigned*)BufferInRef;
+					while(*BufferInRef != ':' && BufferInRef < BufferInEnd){
 						
-						CurrentChar++;
+						BufferInRef++;
 					}
-					if(CurrentChar >= BufferInEnd){
+					if(BufferInRef >= BufferInEnd){
 						return FORMAT_OUT_OF_BOUNDS;
 					}
 					float CalcChannelR = (float)(ChannelColorCalc >> 16 & 0xff);
@@ -256,26 +259,26 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 					ChannelColorRGB.G = (unsigned char)(StepSizeG * (float)('z' - CalcChannelG) + min(Color1.G, Color2.G));
 					ChannelColorRGB.B = (unsigned char)(StepSizeB * (float)('z' - CalcChannelB) + min(Color1.B, Color2.B));
 
-					Assert(*CurrentChar == ':');
-					ChannelName.Length = CurrentChar - ChannelName.Ptr - 1;
+					Assert(*BufferInRef == ':');
+					ChannelName.Length = BufferInRef - ChannelName.Ptr - 1;
 
-					CurrentChar++;
-					if (CurrentChar >= BufferInEnd) {
+					BufferInRef++;
+					if (BufferInRef >= BufferInEnd) {
 						return FORMAT_OUT_OF_BOUNDS;
 					}
 
 					Slice UserMessage;
-					UserMessage.Ptr = CurrentChar;
-					while (*CurrentChar != '\r' && CurrentChar < BufferInEnd) {
-						CurrentChar++;
+					UserMessage.Ptr = BufferInRef;
+					while (*BufferInRef != '\r' && BufferInRef < BufferInEnd) {
+						BufferInRef++;
 					}
-					if (CurrentChar >= BufferInEnd) {
+					if (BufferInRef >= BufferInEnd) {
 						return FORMAT_OUT_OF_BOUNDS;
 					}
-					Assert(*CurrentChar == '\r' && *(CurrentChar + 1) == '\n');
-					UserMessage.Length = CurrentChar - UserMessage.Ptr;
-					CurrentChar += 2;
-					if (CurrentChar >= BufferInEnd) {
+					Assert(*BufferInRef == '\r' && *(BufferInRef + 1) == '\n');
+					UserMessage.Length = BufferInRef - UserMessage.Ptr;
+					BufferInRef += 2;
+					if (BufferInRef >= BufferInEnd) {
 						return FORMAT_OUT_OF_BOUNDS;
 					}
 					//////////////////
@@ -312,7 +315,7 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 						+ UserMessage.Length + sizeof('\n')
 						+ SAFETY_PADDING;
 
-					long int BufferOutSizeFree = (long int)(BufferOutEnd - BufferOutRef);
+					unsigned long BufferOutSizeFree = (unsigned long)(BufferOutEnd - BufferOutRef);
 
 					if(BufferOutSizeFree < ExpectedSize){
 						return FORMAT_OUTPUT_OUT_OF_MEMORY;
@@ -355,23 +358,23 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 
 				}
 				else if (strncmp(MessageType.Ptr, "JOIN", 4) == 0) {
-					Assert(*CurrentChar == '#');
-					CurrentChar++;
-					if (CurrentChar >= BufferInEnd) {
+					Assert(*BufferInRef == '#');
+					BufferInRef++;
+					if (BufferInRef >= BufferInEnd) {
 						return FORMAT_OUT_OF_BOUNDS;
 					}
 					Slice JoinedChannel;
-					JoinedChannel.Ptr = CurrentChar;
-					while (*CurrentChar != '\n' && CurrentChar < BufferInEnd) {
-						CurrentChar++;
+					JoinedChannel.Ptr = BufferInRef;
+					while (*BufferInRef != '\n' && BufferInRef < BufferInEnd) {
+						BufferInRef++;
 					}
-					if (CurrentChar >= BufferInEnd) {
+					if (BufferInRef >= BufferInEnd) {
 						return FORMAT_OUT_OF_BOUNDS;
 					}
-					Assert(*(CurrentChar - 1) == '\r' && *CurrentChar == '\n');
-					JoinedChannel.Length = CurrentChar - JoinedChannel.Ptr - 1;
-					CurrentChar++;
-					if (CurrentChar >= BufferInEnd) {
+					Assert(*(BufferInRef - 1) == '\r' && *BufferInRef == '\n');
+					JoinedChannel.Length = BufferInRef - JoinedChannel.Ptr - 1;
+					BufferInRef++;
+					if (BufferInRef >= BufferInEnd) {
 						return FORMAT_OUT_OF_BOUNDS;
 					}
 
@@ -400,14 +403,14 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 		}
 
 	}
-	Assert(*CurrentChar == '\0');
+	Assert(*BufferInRef == '\0');
 	return FORMAT_SUCCESS;
 
 }
 
-static int ReceiveMessage(SOCKET Socket ,char *Buffer, int BufferSize){
+static int ReceiveMessage(SOCKET S ,char *Buffer, int BufferSize){
 	memset(Buffer, 0, BufferSize);
-	int Result = recv(Socket, Buffer, BufferSize, 0);
+	int Result = recv(S, Buffer, BufferSize, 0);
 	if(Result == SOCKET_ERROR){
 		int Error = WSAGetLastError();
 		printf("Error: %d\n", Error);
@@ -421,14 +424,13 @@ static void LogTwitchMessage( char *Buffer){
 }
 
 
-static SOCKET Socket;
 static int IsInArray(char* *StringArray, int ArrayFillCount, char *ToFind,int ToFindSize){
 	if(ArrayFillCount <= 0){
 		return -1;
 	}
 	for(int i = 0; i < MAX_CONCURRENT_CHANNELS; i++){
 		char *CurrentString = *(StringArray + i);
-		if(strlen(CurrentString) == ToFindSize){
+		if((int)strlen(CurrentString) == ToFindSize){
 			if(strncmp(CurrentString, ToFind, ToFindSize)==0){
 				return i;
 			}
@@ -447,7 +449,7 @@ static int IntPow(int x, int exp){
 
 static int IsSliceRGBValue(Slice Slice){
 	int Sum = 0;
-	for(int i = 0; i < Slice.Length; i++){
+	for(int i = 0; i < (int) Slice.Length; i++){
 		char CurrentChar = Slice.Ptr[(Slice.Length-1) - i];
 		if(!('0' <= CurrentChar && CurrentChar <= '9')){
 			printf("Wrong color format. To change the color use:\"/setcolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
@@ -763,6 +765,11 @@ DWORD WINAPI ThreadProc(
 					printf("Wrong format. To change the color use:\"/setusercolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
 				}
 			}
+			else if(strcmp(InputArray, "/quit\n") == 0 || strcmp(InputArray, "/q\n") == 0){
+				GlobalRunning = 0;
+				
+				return 0;
+			}
 			else if(strcmp(InputArray, "/help\n") == 0 || strcmp(InputArray, "/h\n")==0){
 				const char *Help = "/help or /h: List of all available commands\n";
 				const char *Join = "/join <channel>: Joins the chat of <channel>\n";
@@ -774,8 +781,11 @@ DWORD WINAPI ThreadProc(
 				const char *SetChannelColor = "/setchannelcolor: Changes the channel color to the specified rgb color.\n    The format is: \"/setchannelcolor <red>;<green>;<blue>;\"\n";
 				const char *SetUserColor = "/setusercolor: Changes the user name color to the specified rgb color.\n    The format is: \"/setuser color <red>;<green>;<blue>;\"\n";
 				const char *SetColor = "/setcolor: a shorter form of changing the color of channel and username.\n    The format is: \"/setcolor [-c,-u] <red>;<green>;<blue>; [-c,-u] <red>;<green>;<blue>;\"\n        -c: changes the channel color\n        -u: changes the username color\n";
-				printf("Available commands: \n%s%s%s%s%s%s%s%s%s%s=============================================================================================================\n",Help,Join,Leave,LeaveAll,List,Clear,SetColorMode,SetChannelColor,SetUserColor,SetColor);
+				const char *Quit = "/quit or / q: Exits the application.\n";
+				
+				printf("Available commands: \n%s%s%s%s%s%s%s%s%s%s%s=============================================================================================================\n",Help,Join,Leave,LeaveAll,List,Clear,SetColorMode,SetChannelColor,SetUserColor,SetColor,Quit);
 			}
+			
 			else{
 				printf("Unknown command. Use /help or /h for a list of available commands.\n");
 			}
@@ -818,12 +828,12 @@ int main() {
 
 	char Buffer[4096];
 
-	while (1) {
+	while (GlobalRunning) {
 		int BytesRead = ReceiveMessage(Socket, Buffer, sizeof(Buffer));
 		//LogBuffer(Buffer);
 		char FormattedOutput[4096] = {};
 
-#define MEASURE
+
 #ifdef MEASURE
 		LARGE_INTEGER Start, End;
 		
@@ -848,6 +858,7 @@ int main() {
 
 				LogTwitchMessage(FormattedOutput);
 			}
+#ifdef _DEBUG
 			else{
 				switch(FormatResult){
 				case FORMAT_NON_MESSAGE:
@@ -906,6 +917,27 @@ int main() {
 				}
 				
 			}
+#endif
 		}
+	}
+
+	if(CurrentChannelCount > 0){
+		int i = 0;
+		char **CurrentChannelsRef = CurrentChannels;
+		while(i < CurrentChannelCount){
+			if((*CurrentChannelsRef) != NULL){
+
+				char PartMessage[10 + MAX_USERNAME_LENGTH] = {};
+				sprintf(PartMessage, "PART #%s\r\n", *CurrentChannelsRef);
+				send(Socket, PartMessage, (int)strlen(PartMessage), 0);
+
+				free(*CurrentChannelsRef);
+				*CurrentChannelsRef = NULL;
+				i++;
+			}
+			CurrentChannelsRef++;
+			Assert(CurrentChannelsRef <= CurrentChannels + MAX_CONCURRENT_CHANNELS);
+		}
+		CurrentChannelCount = 0;
 	}
 }
