@@ -2,14 +2,43 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include "math.h"
-
+#include <intrin.h>
 
 #include "ws2tcpip.h"
 #include "stdio.h"
 #include "malloc.h"
 #include "consoleapi2.h"
-#define Assert(x) if(!(x)) __debugbreak();
 
+#ifdef _DEBUG
+#define Assert(x) if(!(x)) __debugbreak();
+#else
+#define Assert(x)
+#endif
+
+#define DEBUG_FAST_POW 0
+
+static unsigned long long MeasurePowFunction(double (*func)(double, double), double base, double exp, double *Result){
+	unsigned long long Start, End;
+	for(int i = 0; i < 10000000; i++) continue;
+	_mm_lfence();
+	Start = __rdtsc();
+	double Res = func(base, exp);
+	End = __rdtsc();
+	unsigned long long CycleCount = End - Start;
+	*Result = Res;
+	return CycleCount;
+}
+static unsigned long long MeasureIntPowFunction(int (*func)(int, int), int base, int exp, int *Result){
+	unsigned long long Start, End;
+	for(int i = 0; i < 10000000; i++) continue;
+	_mm_lfence();
+	Start = __rdtsc();
+	int Res = func(base, exp);
+	End = __rdtsc();
+	unsigned long long CycleCount = End - Start;
+	*Result = Res;
+	return CycleCount;
+}
 
 
 	
@@ -34,8 +63,6 @@ static RGB UniformUserColor = DefaultUniformUserColor;
 
 
 static bool IsUniformColors = 1;
-
-
 
 enum FORMAT_RESULT{
 	FORMAT_PLACEHOLDER,
@@ -392,13 +419,9 @@ static void LogTwitchMessage( char *Buffer){
 	printf("%s", Buffer);
 	
 }
-static void LogBuffer(char *Buffer){
-	printf("%s\n", Buffer);
-}
+
 
 static SOCKET Socket;
-
-
 static int IsInArray(char* *StringArray, int ArrayFillCount, char *ToFind,int ToFindSize){
 	if(ArrayFillCount <= 0){
 		return -1;
@@ -431,7 +454,25 @@ static int IsSliceRGBValue(Slice Slice){
 			return -1;
 		}
 		int CharValue = CurrentChar - '0';
+		
+#ifdef _DEBUG
+#if DEBUG_FAST_POW
+		int tmp = 0;
+		unsigned long long CycleCount = MeasureIntPowFunction(&IntPow, 10, i, &tmp);
+		Sum += tmp * CharValue;
+#else
+		double tmp = 0;
+		unsigned long long CycleCount = MeasurePowFunction(&pow, 10.0f, (double) i, &tmp);
+		Sum += (int)tmp * CharValue;
+#endif
+		char tmpBuffer[4096] = {};
+		snprintf(tmpBuffer,4096,"%llu\n",CycleCount);
+		OutputDebugStringA(tmpBuffer);
+#else
 		Sum += CharValue * IntPow(10, i);
+#endif
+
+		
 	}
 	Assert(Sum == atol(Slice.Ptr));
 	if(Sum > 255){
@@ -781,6 +822,8 @@ int main() {
 		int BytesRead = ReceiveMessage(Socket, Buffer, sizeof(Buffer));
 		//LogBuffer(Buffer);
 		char FormattedOutput[4096] = {};
+
+#define MEASURE
 #ifdef MEASURE
 		LARGE_INTEGER Start, End;
 		
