@@ -1,9 +1,5 @@
-#define _WINSOCK_DEPRECATED_NO_WARNINGS
-#define _CRT_SECURE_NO_WARNINGS
-
 #include "math.h"
 #include <intrin.h>
-
 #include "ws2tcpip.h"
 #include "stdio.h"
 #include "malloc.h"
@@ -571,7 +567,7 @@ DWORD WINAPI ThreadProc(
 							ChannelName[i] = (char)tolower(ChannelName[i]);
 						}
 						char JoinMessage[10 + MAX_USERNAME_LENGTH] = {};
-						sprintf(JoinMessage, "JOIN #%s\r\n", ChannelName);
+						sprintf_s(JoinMessage,sizeof(JoinMessage), "JOIN #%s\r\n", ChannelName);
 						send(Socket, JoinMessage, (int)strlen(JoinMessage), 0);
 					} else{
 						printf("Channel Name max 25 characters.\n");
@@ -591,7 +587,7 @@ DWORD WINAPI ThreadProc(
 					if((*CurrentChannelsRef) != NULL){
 
 						char PartMessage[10 + MAX_USERNAME_LENGTH] = {};
-						sprintf(PartMessage, "PART #%s\r\n", *CurrentChannelsRef);
+						sprintf_s(PartMessage,sizeof(PartMessage), "PART #%s\r\n", *CurrentChannelsRef);
 						send(Socket, PartMessage, (int)strlen(PartMessage), 0);
 
 						free(*CurrentChannelsRef);
@@ -621,7 +617,7 @@ DWORD WINAPI ThreadProc(
 								CurrentChannelCount--;
 
 								char PartMessage[10 + MAX_USERNAME_LENGTH] = {};
-								sprintf(PartMessage, "PART #%s\r\n", ChannelName);
+								sprintf_s(PartMessage,sizeof(PartMessage), "PART #%s\r\n", ChannelName);
 								send(Socket, PartMessage, (int)strlen(PartMessage), 0);
 								printf("You left %s\n", ChannelName);
 							} else{
@@ -793,6 +789,7 @@ DWORD WINAPI ThreadProc(
 }
 
 
+
 int main() {
 	SetConsoleOutputCP(65001);
 	SetConsoleCP(65001);
@@ -805,10 +802,13 @@ int main() {
 	Socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	Assert(Socket != INVALID_SOCKET);
 
+	const char *IrcChatIPv4 = "44.237.40.50";
+
 	sockaddr_in Address = {};
 	Address.sin_family = AF_INET;
 	Address.sin_port = htons(6667);
-	Address.sin_addr.s_addr = inet_addr("44.237.40.50");
+	Assert(inet_pton(AF_INET,IrcChatIPv4,&Address.sin_addr.S_un.S_addr));
+
 
 	if(connect(Socket, (sockaddr *)&Address, sizeof(Address)) == SOCKET_ERROR){
 		int Error = WSAGetLastError();
@@ -942,7 +942,7 @@ int main() {
 		while(i < CurrentChannelCount){
 			if((*CurrentChannelsRef) != NULL){
 				char PartMessage[10 + MAX_USERNAME_LENGTH] = {};
-				sprintf(PartMessage, "PART #%s\r\n", *CurrentChannelsRef);
+				sprintf_s(PartMessage,sizeof(PartMessage), "PART #%s\r\n", *CurrentChannelsRef);
 				send(Socket, PartMessage, (int)strlen(PartMessage), 0);
 
 				free(*CurrentChannelsRef);
