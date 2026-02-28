@@ -17,31 +17,6 @@
 
 #define DEBUG_FAST_POW 0
 
-static unsigned long long MeasurePowFunction(double (*func)(double, double), double base, double exp, double *Result){
-	unsigned long long Start, End;
-	for(int i = 0; i < 10000000; i++) continue;
-	_mm_lfence();
-	Start = __rdtsc();
-	double Res = func(base, exp);
-	End = __rdtsc();
-	unsigned long long CycleCount = End - Start;
-	*Result = Res;
-	return CycleCount;
-}
-static unsigned long long MeasureIntPowFunction(int (*func)(int, int), int base, int exp, int *Result){
-	unsigned long long Start, End;
-	for(int i = 0; i < 10000000; i++) continue;
-	_mm_lfence();
-	Start = __rdtsc();
-	int Res = func(base, exp);
-	End = __rdtsc();
-	unsigned long long CycleCount = End - Start;
-	*Result = Res;
-	return CycleCount;
-}
-
-
-	
 
 #define MAX_CONCURRENT_CHANNELS 64
 #define MAX_LENGTH 500
@@ -96,6 +71,7 @@ struct Slice{
 	char *Ptr;
 	size_t Length;
 };
+
 
 
 
@@ -423,6 +399,28 @@ static void LogTwitchMessage( char *Buffer){
 	
 }
 
+static unsigned long long MeasurePowFunction(double (*func)(double, double), double base, double exp, double *Result){
+	unsigned long long Start, End;
+	for(int i = 0; i < 10000000; i++) continue;
+	_mm_lfence();
+	Start = __rdtsc();
+	double Res = func(base, exp);
+	End = __rdtsc();
+	unsigned long long CycleCount = End - Start;
+	*Result = Res;
+	return CycleCount;
+}
+static unsigned long long MeasureIntPowFunction(int (*func)(int, int), int base, int exp, int *Result){
+	unsigned long long Start, End;
+	for(int i = 0; i < 10000000; i++) continue;
+	_mm_lfence();
+	Start = __rdtsc();
+	int Res = func(base, exp);
+	End = __rdtsc();
+	unsigned long long CycleCount = End - Start;
+	*Result = Res;
+	return CycleCount;
+}
 
 static int IsInArray(char* *StringArray, int ArrayFillCount, char *ToFind,int ToFindSize){
 	if(ArrayFillCount <= 0){
@@ -447,7 +445,7 @@ static int IntPow(int x, int exp){
 	return Result;
 }
 
-static int IsSliceRGBValue(Slice Slice){
+static int IsSliceRGBValue(Slice Slice){ 
 	int Sum = 0;
 	for(int i = 0; i < (int) Slice.Length; i++){
 		char CurrentChar = Slice.Ptr[(Slice.Length-1) - i];
@@ -553,7 +551,7 @@ DWORD WINAPI ThreadProc(
 	char InputArray[MAX_LENGTH+1];
 	printf("You are ready to join a chat. If you need help use /help.\n");
 	
-	while(1){
+	while(GlobalRunning){
 		memset(InputArray, 0, MAX_LENGTH+1);
 		fgets(InputArray, MAX_LENGTH + 1, stdin);
 
@@ -767,7 +765,6 @@ DWORD WINAPI ThreadProc(
 			}
 			else if(strcmp(InputArray, "/quit\n") == 0 || strcmp(InputArray, "/q\n") == 0){
 				GlobalRunning = 0;
-				
 				return 0;
 			}
 			else if(strcmp(InputArray, "/help\n") == 0 || strcmp(InputArray, "/h\n")==0){
@@ -792,6 +789,7 @@ DWORD WINAPI ThreadProc(
 		}
 	}
 	lpParameter = 0;
+	return 0;
 }
 
 
@@ -823,12 +821,29 @@ int main() {
 		int Error = WSAGetLastError();
 		printf("Error: %d\n", Error);
 	}
+
+
+	char Buffer[4096];
+	fd_set SocketSet = {1,Socket};
+	TIMEVAL Timeout = {0,1};
+
 	DWORD ThreadID;
 	CreateThread(0, 0, ThreadProc, NULL, 0, &ThreadID);
 
-	char Buffer[4096];
-
+	
+	
 	while (GlobalRunning) {
+		SocketSet.fd_count = 1;
+		Result = select(0, &SocketSet, NULL, NULL, &Timeout);
+		if(Result == 0){
+			continue;
+		}
+		if(Result < 0){
+			int Error = WSAGetLastError();
+			printf("Error: %d\n", Error);
+			Assert(0);
+		}
+
 		int BytesRead = ReceiveMessage(Socket, Buffer, sizeof(Buffer));
 		//LogBuffer(Buffer);
 		char FormattedOutput[4096] = {};
@@ -926,7 +941,6 @@ int main() {
 		char **CurrentChannelsRef = CurrentChannels;
 		while(i < CurrentChannelCount){
 			if((*CurrentChannelsRef) != NULL){
-
 				char PartMessage[10 + MAX_USERNAME_LENGTH] = {};
 				sprintf(PartMessage, "PART #%s\r\n", *CurrentChannelsRef);
 				send(Socket, PartMessage, (int)strlen(PartMessage), 0);
@@ -940,4 +954,5 @@ int main() {
 		}
 		CurrentChannelCount = 0;
 	}
+	Assert(closesocket(Socket) == 0);
 }
