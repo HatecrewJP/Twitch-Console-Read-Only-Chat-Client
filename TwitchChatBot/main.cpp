@@ -118,7 +118,7 @@ internal FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize,
 		bool IsPing = !strncmp(BufferInRef, "PING", 4);
 		if(IsPing){
 			//Output: "PONG <text in>\r\n"
-			Assert(memcpy(BufferOut, "PONG", 4));
+			memcpy(BufferOut, "PONG", 4);
 			BufferInRef += 4;
 			//start writing after "PONG"
 			int i = 4;
@@ -929,8 +929,8 @@ int main() {
 	sockaddr_in Address = {};
 	Address.sin_family = AF_INET;
 	Address.sin_port = htons(6667);
-	Assert(inet_pton(AF_INET,IrcChatIPv4,&Address.sin_addr.S_un.S_addr));
-
+	int r = inet_pton(AF_INET, IrcChatIPv4, &Address.sin_addr.S_un.S_addr);
+	Assert(r);
 
 	if(connect(Socket, (sockaddr *)&Address, sizeof(Address)) == SOCKET_ERROR){
 		int Error = WSAGetLastError();
@@ -1076,5 +1076,6 @@ int main() {
 		}
 		CurrentChannelCount = 0;
 	}
-	Assert(closesocket(Socket) == 0);
+	r = closesocket(Socket)
+	Assert(r == 0);
 }

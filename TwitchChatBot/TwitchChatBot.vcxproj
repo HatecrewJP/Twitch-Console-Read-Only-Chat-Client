@@ -136,7 +136,7 @@
       <ConformanceMode>true</ConformanceMode>
       <AssemblerOutput>AssemblyAndSourceCode</AssemblerOutput>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <DisableSpecificWarnings>4505</DisableSpecificWarnings>
+      <DisableSpecificWarnings>4505;4189</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
