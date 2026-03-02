@@ -1076,6 +1076,6 @@ int main() {
 		}
 		CurrentChannelCount = 0;
 	}
-	r = closesocket(Socket)
+	r = closesocket(Socket);
 	Assert(r == 0);
 }
