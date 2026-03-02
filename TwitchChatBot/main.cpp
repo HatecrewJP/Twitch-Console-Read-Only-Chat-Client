@@ -752,25 +752,24 @@ DWORD WINAPI ThreadProc(
 					if(*InputArrayRef == ' '){
 						InputArrayRef++;
 					}
-				} else if(strncmp(InputArrayRef, "-u ", 3) == 0){
+				}
+				else if (strncmp(InputArrayRef, "-u ", 3) == 0) {
 					InputArrayRef += 3;
 					int Result = SetColorStructFromString(&UniformUserColor, InputArrayRef);
-					if(Result == -2){
+					if (Result == -2) {
 						printf("Wrong format. To change the color use /setcolor [-c,-u] <red>;<green>;<blue>;\n");
 						continue;
 					}
-					if(Result <= 0){
+					if (Result <= 0) {
 						continue;
 					}
 					InputArrayRef += Result;
-					if(*InputArrayRef == ' '){
+					if (*InputArrayRef == ' ') {
 						InputArrayRef++;
 					}
-					else{
-						printf("Wrong format. To change the color use /setcolor [-c,-u] <red>;<green>;<blue>;\n");
-						continue;
-					}
 				}
+				
+				
 			}
 			/////////////////////////////
 			//command: /setchannelcolor//
@@ -866,10 +865,7 @@ DWORD WINAPI ThreadProc(
 					InputArrayRef += Result;
 					if(*InputArrayRef == ' '){
 						InputArrayRef++;
-					} else{
-						printf("Wrong format. To change the color use /setrgbcolor [-a,-b] <red>;<green>;<blue>;\n");
-						continue;
-					}
+					} 
 				}
 			}
 			/////////////////////////////
