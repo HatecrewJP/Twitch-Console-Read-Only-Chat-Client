@@ -5,21 +5,25 @@
 #include "malloc.h"
 #include "consoleapi2.h"
 
+
+
 #ifdef _DEBUG
 #define Assert(x) if(!(x)) __debugbreak();
 #else
 #define Assert(x)
 #endif
 
-#define DEBUG_FAST_POW 0
 
 
+#define global static
+#define internal static
+
+#define DEBUG_FAST_POW 1
 #define MAX_CONCURRENT_CHANNELS 64
 #define MAX_LENGTH 500
 #define MAX_COMMAND_LENGTH 20
 #define MAX_USERNAME_LENGTH 25
-static char *CurrentChannels[MAX_CONCURRENT_CHANNELS] = {};
-static int CurrentChannelCount = 0;
+
 
 struct RGB{
 	unsigned char R;
@@ -27,16 +31,10 @@ struct RGB{
 	unsigned char B;
 };
 
-static RGB DefaultUniformChannelColor = {255,125,125};
-static RGB DefaultUniformUserColor = {255,0,125};
-static RGB UniformChannelColor = DefaultUniformChannelColor;
-static RGB UniformUserColor = DefaultUniformUserColor;
-
-
-static SOCKET Socket = {};
-static bool IsUniformColors = 1;
-
-static int GlobalRunning = 1;
+struct Slice{
+	char *Ptr;
+	size_t Length;
+};
 
 enum FORMAT_RESULT{
 	FORMAT_PLACEHOLDER,
@@ -63,15 +61,29 @@ enum FORMAT_RESULT{
 	FORMAT_ERROR_COUNT
 };
 
-struct Slice{
-	char *Ptr;
-	size_t Length;
-};
+global char *CurrentChannels[MAX_CONCURRENT_CHANNELS] = {};
+global int CurrentChannelCount = 0;
+
+global RGB DefaultUniformChannelColor = {255,125,125};
+global RGB DefaultUniformUserColor = {255,0,125};
+global RGB UniformChannelColor = DefaultUniformChannelColor;
+global RGB UniformUserColor = DefaultUniformUserColor;
+
+global RGB Color1 = {200,20,20};
+global RGB Color2 = {255,120,255};
+
+global SOCKET Socket = {};
+global bool IsUniformColors = 1;
+
+static int GlobalRunning = 1;
 
 
 
 
-static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, char *BufferOut, int BufferOutSize){
+
+
+
+internal FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, char *BufferOut, int BufferOutSize){
 	if(BufferIn == NULL){
 		return FORMAT_BUFFER_IN_NULL;
 	}
@@ -159,8 +171,7 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 					return FORMAT_NON_MESSAGE;
 				}
 				UserName.Length = BufferInRef - UserName.Ptr;
-				RGB Color1 = {200,20,20};
-				RGB Color2 = {255,120,255};
+				
 
 				unsigned char CalcUserR = (UserColorCalc >> 16 & 0xff);
 				unsigned char CalcUserG = (UserColorCalc >> 8  & 0xff);
@@ -380,7 +391,7 @@ static FORMAT_RESULT FormatTwitchUserMessage(char *BufferIn, int BufferInSize, c
 
 }
 
-static int ReceiveMessage(SOCKET S ,char *Buffer, int BufferSize){
+internal int ReceiveMessage(SOCKET S ,char *Buffer, int BufferSize){
 	memset(Buffer, 0, BufferSize);
 	int Result = recv(S, Buffer, BufferSize, 0);
 	if(Result == SOCKET_ERROR){
@@ -390,12 +401,12 @@ static int ReceiveMessage(SOCKET S ,char *Buffer, int BufferSize){
 	return Result;
 }
 
-static void LogTwitchMessage( char *Buffer){
+internal void LogTwitchMessage( char *Buffer){
 	printf("%s", Buffer);
 	
 }
 
-static unsigned long long MeasurePowFunction(double (*func)(double, double), double base, double exp, double *Result){
+internal unsigned long long MeasurePowFunction(double (*func)(double, double), double base, double exp, double *Result){
 	unsigned long long Start, End;
 	for(int i = 0; i < 10000000; i++) continue;
 	_mm_lfence();
@@ -406,7 +417,7 @@ static unsigned long long MeasurePowFunction(double (*func)(double, double), dou
 	*Result = Res;
 	return CycleCount;
 }
-static unsigned long long MeasureIntPowFunction(int (*func)(int, int), int base, int exp, int *Result){
+internal unsigned long long MeasureIntPowFunction(int (*func)(int, int), int base, int exp, int *Result){
 	unsigned long long Start, End;
 	for(int i = 0; i < 10000000; i++) continue;
 	_mm_lfence();
@@ -418,7 +429,7 @@ static unsigned long long MeasureIntPowFunction(int (*func)(int, int), int base,
 	return CycleCount;
 }
 
-static int IsInArray(char* *StringArray, int ArrayFillCount, char *ToFind,int ToFindSize){
+internal int IsInArray(char* *StringArray, int ArrayFillCount, char *ToFind,int ToFindSize){
 	if(ArrayFillCount <= 0){
 		return -1;
 	}
@@ -433,7 +444,7 @@ static int IsInArray(char* *StringArray, int ArrayFillCount, char *ToFind,int To
 	return -1;
 }
 
-static int IntPow(int x, int exp){
+internal int IntPow(int x, int exp){
 	int Result = 1;
 	for(int i = 0; i < exp; i++){
 		Result *= x;
@@ -441,7 +452,7 @@ static int IntPow(int x, int exp){
 	return Result;
 }
 
-static int IsSliceRGBValue(Slice Slice){ 
+internal int IsSliceRGBValue(Slice Slice){ 
 	int Sum = 0;
 	for(int i = 0; i < (int) Slice.Length; i++){
 		char CurrentChar = Slice.Ptr[(Slice.Length-1) - i];
@@ -479,7 +490,7 @@ static int IsSliceRGBValue(Slice Slice){
 
 }
 
-static int SetColorStructFromString(RGB *ColorStruct, char *Array){
+internal int SetColorStructFromString(RGB *ColorStruct, char *Array){
 	char *InputArrayRef = Array;
 	
 	Slice StringRed;
@@ -552,6 +563,9 @@ DWORD WINAPI ThreadProc(
 		fgets(InputArray, MAX_LENGTH + 1, stdin);
 
 		if(InputArray[0] == '/'){
+			//////////////////
+			//command: /join//
+			//////////////////
 			if(strncmp(InputArray, "/join ",6) == 0){
 				if(CurrentChannelCount > MAX_CONCURRENT_CHANNELS){
 					printf("You reached the limit of channels you are able to join.\n");
@@ -567,7 +581,7 @@ DWORD WINAPI ThreadProc(
 							ChannelName[i] = (char)tolower(ChannelName[i]);
 						}
 						char JoinMessage[10 + MAX_USERNAME_LENGTH] = {};
-						sprintf_s(JoinMessage,sizeof(JoinMessage), "JOIN #%s\r\n", ChannelName);
+						sprintf(JoinMessage, "JOIN #%s\r\n", ChannelName);
 						send(Socket, JoinMessage, (int)strlen(JoinMessage), 0);
 					} else{
 						printf("Channel Name max 25 characters.\n");
@@ -576,6 +590,9 @@ DWORD WINAPI ThreadProc(
 					printf("Channel Name needs at least 4 and at most 25 characters.\n");
 				}
 			}
+			//////////////////////
+			//command: /leaveall//
+			//////////////////////
 			else if(strcmp(InputArray, "/leaveall\n") == 0){
 				if(CurrentChannelCount <= 0){
 					printf("You didn't join any chat yet.\n");
@@ -587,7 +604,7 @@ DWORD WINAPI ThreadProc(
 					if((*CurrentChannelsRef) != NULL){
 
 						char PartMessage[10 + MAX_USERNAME_LENGTH] = {};
-						sprintf_s(PartMessage,sizeof(PartMessage), "PART #%s\r\n", *CurrentChannelsRef);
+						sprintf(PartMessage, "PART #%s\r\n", *CurrentChannelsRef);
 						send(Socket, PartMessage, (int)strlen(PartMessage), 0);
 
 						free(*CurrentChannelsRef);
@@ -600,6 +617,9 @@ DWORD WINAPI ThreadProc(
 				CurrentChannelCount = 0;
 				printf("You left all channels.\n");
 			}
+			//////////////////////
+			//command: /leave   //
+			//////////////////////
 			else if(strncmp(InputArray, "/leave ", 7)==0){
 				int ChannelLength = (int)strlen(InputArray + 7);
 				char ChannelName[MAX_USERNAME_LENGTH + 1] = {};
@@ -617,7 +637,7 @@ DWORD WINAPI ThreadProc(
 								CurrentChannelCount--;
 
 								char PartMessage[10 + MAX_USERNAME_LENGTH] = {};
-								sprintf_s(PartMessage,sizeof(PartMessage), "PART #%s\r\n", ChannelName);
+								sprintf(PartMessage, "PART #%s\r\n", ChannelName);
 								send(Socket, PartMessage, (int)strlen(PartMessage), 0);
 								printf("You left %s\n", ChannelName);
 							} else{
@@ -631,6 +651,10 @@ DWORD WINAPI ThreadProc(
 					printf("Channel Name max 25 characters.\n");
 				}
 			}
+
+			//////////////////////
+			//command: /list    //
+			//////////////////////
 			else if(strcmp(InputArray, "/list\n")==0){
 				if(CurrentChannelCount <= 0){
 					printf("You didn't join any chat yet.\n");
@@ -647,9 +671,17 @@ DWORD WINAPI ThreadProc(
 					CurrentChannelsRef++;
 				}
 			}
+
+			//////////////////////////
+			//command: /clear       //
+			//////////////////////////
 			else if(strcmp(InputArray, "/clear\n")==0){
 				printf("\033[2J\033[H");
 			}
+
+			//////////////////////////
+			//command: /setcolormode//
+			//////////////////////////
 			else if(strncmp(InputArray, "/setcolormode ",14)==0){
 				if(strcmp(InputArray + 14,"0\n") == 0|| strcmp(InputArray + 14, "uniform\n") == 0){
 					IsUniformColors = 1;
@@ -665,6 +697,9 @@ DWORD WINAPI ThreadProc(
 				}
 
 			}
+			/////////////////////////////
+			//command: /setcolor       //
+			/////////////////////////////
 			else if(strncmp(InputArray, "/setcolor ",10)==0){
 				char *InputArrayRef = InputArray + 10;
 				if(strncmp(InputArrayRef, "-c ", 3) == 0){
@@ -737,6 +772,9 @@ DWORD WINAPI ThreadProc(
 					}
 				}
 			}
+			/////////////////////////////
+			//command: /setchannelcolor//
+			/////////////////////////////
 			else if(strncmp(InputArray, "/setchannelcolor ", 17)==0){
 				if(strcmp(InputArray + 17, "-d\n") == 0){
 					UniformChannelColor = DefaultUniformChannelColor;
@@ -748,6 +786,9 @@ DWORD WINAPI ThreadProc(
 					printf("Wrong format. To change the color use:\"/setchannelcolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
 				}
 			}
+			/////////////////////////////
+			//command: /setusercolor   //
+			/////////////////////////////
 			else if(strncmp(InputArray, "/setusercolor ", 14)==0){
 				if(strcmp(InputArray + 14, "-d\n") == 0){
 					UniformUserColor = DefaultUniformUserColor;
@@ -759,10 +800,88 @@ DWORD WINAPI ThreadProc(
 					printf("Wrong format. To change the color use:\"/setusercolor <red>;<green>;<blue>;\", where each color is a number between 0 and 255\n");
 				}
 			}
+			/////////////////////////////
+			//command: /setrgbcolor    //
+			/////////////////////////////
+			else if(strncmp(InputArray, "/setrgbcolor ", 13) == 0){
+				char *InputArrayRef = InputArray + 13;
+				if(strncmp(InputArrayRef, "-a ", 3) == 0){
+					InputArrayRef += 3;
+					int Result = SetColorStructFromString(&Color1, InputArrayRef);
+					if(Result == -2){
+						printf("Wrong format. To change the color use /setrgbcolor [-a,-b] <red>;<green>;<blue>;\n");
+					}
+					if(Result <= 0){
+						continue;
+					}
+					InputArrayRef += Result;
+					if(*InputArrayRef == ' '){
+						InputArrayRef++;
+					}
+				} else if(strncmp(InputArrayRef, "-b ", 3) == 0){
+					InputArrayRef += 3;
+					int Result = SetColorStructFromString(&Color2, InputArrayRef);
+					if(Result == -2){
+						printf("Wrong format. To change the color use /setrgbcolor [-a,-b] <red>;<green>;<blue>;\n");
+						continue;
+					}
+					if(Result <= 0){
+						continue;
+					}
+					InputArrayRef += Result;
+					if(*InputArrayRef == ' '){
+						InputArrayRef++;
+					}
+				} else{
+					printf("Wrong format. To change the color use /setrgbcolor [-a,-b] <red>;<green>;<blue>;\n");
+					continue;
+				}
+				if(*InputArrayRef == ' '){
+					InputArrayRef++;
+				}
+
+				if(strncmp(InputArrayRef, "-b ", 3) == 0){
+					InputArrayRef += 3;
+					int Result = SetColorStructFromString(&Color2, InputArrayRef);
+					if(Result == -2){
+						printf("Wrong format. To change the color use /setrgbcolor [-a,-b] <red>;<green>;<blue>;\n");
+					}
+					if(Result <= 0){
+						continue;
+					}
+					InputArrayRef += Result;
+					if(*InputArrayRef == ' '){
+						InputArrayRef++;
+					}
+				} else if(strncmp(InputArrayRef, "-a ", 3) == 0){
+					InputArrayRef += 3;
+					int Result = SetColorStructFromString(&Color1, InputArrayRef);
+					if(Result == -2){
+						printf("Wrong format. To change the color use /setrgbcolor [-a,-b] <red>;<green>;<blue>;\n");
+						continue;
+					}
+					if(Result <= 0){
+						continue;
+					}
+					InputArrayRef += Result;
+					if(*InputArrayRef == ' '){
+						InputArrayRef++;
+					} else{
+						printf("Wrong format. To change the color use /setrgbcolor [-a,-b] <red>;<green>;<blue>;\n");
+						continue;
+					}
+				}
+			}
+			/////////////////////////////
+			//command: /quit		   //
+			/////////////////////////////
 			else if(strcmp(InputArray, "/quit\n") == 0 || strcmp(InputArray, "/q\n") == 0){
 				GlobalRunning = 0;
 				return 0;
 			}
+			/////////////////////////////
+			//command: /help		   //
+			/////////////////////////////
 			else if(strcmp(InputArray, "/help\n") == 0 || strcmp(InputArray, "/h\n")==0){
 				const char *Help = "/help or /h: List of all available commands\n";
 				const char *Join = "/join <channel>: Joins the chat of <channel>\n";
@@ -771,12 +890,15 @@ DWORD WINAPI ThreadProc(
 				const char *List = "/list: Lists all currently connected channels\n";
 				const char *Clear = "/clear: Clears the screen.\n";
 				const char *SetColorMode = "/setcolormode: Changes the color scheme of channel and user name.\n    \"uniform\" or \"0\": The color is equal for all channels and user names\n    \"rgb\" or \"1\": The channel and user name color is varying, but consistent for each user\n";
-				const char *SetChannelColor = "/setchannelcolor: Changes the channel color to the specified rgb color.\n    The format is: \"/setchannelcolor <red>;<green>;<blue>;\"\n";
-				const char *SetUserColor = "/setusercolor: Changes the user name color to the specified rgb color.\n    The format is: \"/setuser color <red>;<green>;<blue>;\"\n";
-				const char *SetColor = "/setcolor: a shorter form of changing the color of channel and username.\n    The format is: \"/setcolor [-c,-u] <red>;<green>;<blue>; [-c,-u] <red>;<green>;<blue>;\"\n        -c: changes the channel color\n        -u: changes the username color\n";
+				const char *SetChannelColor = "/setchannelcolor: Changes the channel color to the specified rgb color.\n    The format is: \"/setchannelcolor <red>;<green>;<blue>;\"\n    The color is a whole number between 0 and 255\n";
+				const char *SetUserColor = "/setusercolor: Changes the user name color to the specified rgb color.\n    The format is: \"/setuser color <red>;<green>;<blue>;\"\n    The color is a whole number between 0 and 255\n";
+				const char *SetColor = "/setcolor: a shorter form of changing the color of channel and username.\n    The format is: \"/setcolor [-c,-u] <red>;<green>;<blue>; [-c,-u] <red>;<green>;<blue>;\"\n        -c: changes the channel color\n        -u: changes the username color\n    Each color is a whole number between 0 and 255\n";
+				const char *SetRGBColor = "/setrgbcolor: sets the two colors used to calculate the rgb color.\n    The format is: \"setrgbcolor [-a,-b] <red>;<green>;<blue>; [-a,-b] <red>;<green>;<blue>;\"\n        -a: sets the first color\n        -b: sets the second color\n    Each color is a whole number between 0 and 255\n";
 				const char *Quit = "/quit or / q: Exits the application.\n";
 				
-				printf("Available commands: \n%s%s%s%s%s%s%s%s%s%s%s=============================================================================================================\n",Help,Join,Leave,LeaveAll,List,Clear,SetColorMode,SetChannelColor,SetUserColor,SetColor,Quit);
+
+
+				printf("Available commands: \n%s%s%s%s%s%s%s%s%s%s%s%s=============================================================================================================\n",Help,Join,Leave,LeaveAll,List,Clear,SetColorMode,SetChannelColor,SetUserColor,SetColor,SetRGBColor,Quit);
 			}
 			
 			else{
